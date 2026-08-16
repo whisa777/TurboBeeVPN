@@ -255,15 +255,6 @@ class TurboBeeApp:
             w.bind("<Button-1>", lambda e: self.toggle_connect())
         self._draw_status_dot()
 
-        self.key_card = RoundedFrame(self.bg, radius=16, fill=self.colors()["surface"])
-        self.key_card.pack(fill="x", padx=16, pady=6)
-        self.current_key_title = tk.Label(self.key_card.inner(), text="", font=("Segoe UI", 9, "bold"))
-        self.current_key_title.pack(anchor="w", padx=14, pady=(10, 0))
-        self.current_key_lbl = tk.Label(self.key_card.inner(), text="", font=("Segoe UI", 11, "bold"))
-        self.current_key_lbl.pack(anchor="w", padx=14, pady=(0, 4))
-        self.current_key_proto = tk.Label(self.key_card.inner(), text="", font=("Segoe UI", 8))
-        self.current_key_proto.pack(anchor="w", padx=14, pady=(0, 10))
-
         self.keys_title = tk.Frame(self.bg)
         self.keys_title.pack(fill="x", padx=16, pady=(10, 2))
         self.keys_title_lbl = tk.Label(self.keys_title, text="", font=("Segoe UI", 12, "bold"), cursor="hand2")
@@ -296,6 +287,13 @@ class TurboBeeApp:
         self.keys_canvas.pack(side="left", fill="both", expand=True)
         self.keys_scroll.pack(side="right", fill="y")
 
+        def _on_wheel(e):
+            self.keys_canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+
+        self.keys_canvas.bind("<MouseWheel>", _on_wheel)
+        self.keys_inner.bind("<MouseWheel>", _on_wheel)
+        self.keys_frame.bind("<MouseWheel>", _on_wheel)
+
     def _btn_hover(self, on):
         c = self.colors()
         fill = c["accent"] if on else c["primary"]
@@ -325,12 +323,6 @@ class TurboBeeApp:
             w.configure(bg=c["surface"], fg=c["primary"])
         self.traffic_total_lbl.configure(bg=c["surface"], fg=c["text_secondary"])
         self._draw_status_dot()
-        self.key_card.set_bg(c["surface"])
-        for w in (self.current_key_title, self.current_key_lbl, self.current_key_proto):
-            w.configure(bg=c["surface"])
-        self.current_key_title.configure(fg=c["primary"])
-        self.current_key_lbl.configure(fg=c["text"])
-        self.current_key_proto.configure(fg=c["text_secondary"])
         self.add_btn.set_bg(c["primary"])
         self.add_btn_lbl.configure(bg=c["primary"], fg=c["primary_text"])
         self.keys_title_lbl.configure(bg=c["bg"], fg=c["text"])
@@ -356,7 +348,6 @@ class TurboBeeApp:
         self.settings_btn.configure(text="⚙")
         self.add_btn_lbl.configure(text=t("add_key_btn"))
         self._update_status_ui()
-        self.current_key_title.configure(text=t("current_key"))
         self.keys_title_lbl.configure(text="%s (%d)" % (t("my_keys"), len(self.cfg.get("profiles", []))))
         for child in self.keys_inner.winfo_children():
             child.destroy()
@@ -416,18 +407,6 @@ class TurboBeeApp:
     def refresh_profiles(self):
         t = self.tr
         profiles = self.cfg.get("profiles", [])
-        current = self.cfg.get("current", 0)
-        if profiles:
-            p = profiles[current]
-            self.current_key_lbl.configure(text=p.get("name", "?"))
-            proto = p.get("transport", "tcp")
-            sec = p.get("security", "none")
-            sec_txt = {"none": "без шифрования" if self.cfg.get("language") == "ru" else "no encryption",
-                       "tls": "TLS"}.get(sec, sec)
-            self.current_key_proto.configure(text="%s · %s" % (proto.upper(), sec_txt))
-        else:
-            self.current_key_lbl.configure(text=t("no_key"))
-            self.current_key_proto.configure(text="")
         self.keys_title_lbl.configure(text="%s (%d)" % (t("my_keys"), len(profiles)))
         for child in self.keys_inner.winfo_children():
             child.destroy()
@@ -435,6 +414,7 @@ class TurboBeeApp:
             lbl = tk.Label(self.keys_inner, text=t("no_keys"), font=("Segoe UI", 9), wraplength=340, justify="left")
             lbl.pack(fill="x", padx=8, pady=6)
             lbl.configure(bg=self.colors()["bg"], fg=self.colors()["text_secondary"])
+            lbl.bind("<MouseWheel>", self._on_key_wheel)
         for i, p in enumerate(profiles):
             self._add_key_row(i, p)
         self.apply_theme()
@@ -454,10 +434,18 @@ class TurboBeeApp:
         name_lbl.configure(bg=c["surface"], fg=c["text"])
         for w in (inner, marker_lbl, name_lbl):
             w.bind("<Button-1>", lambda e, i=idx: self.select_key(i))
+            w.bind("<MouseWheel>", self._on_key_wheel)
         del_btn = tk.Label(inner, text="✕", font=("Segoe UI", 10), cursor="hand2")
         del_btn.pack(side="right", padx=12, pady=8)
         del_btn.configure(bg=c["surface"], fg=c["accent"])
         del_btn.bind("<Button-1>", lambda e, i=idx: self.delete_key(i))
+        del_btn.bind("<MouseWheel>", self._on_key_wheel)
+
+    def _on_key_wheel(self, e):
+        try:
+            self.keys_canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+        except Exception:
+            pass
 
     def _theme_key_row(self, row):
         c = self.colors()
