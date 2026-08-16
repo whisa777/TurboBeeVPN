@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import winreg
 
@@ -69,6 +70,11 @@ def parse_vless(uri):
     path = params.get("path", "/")
     security = params.get("security", "none")
     transport = params.get("type", "tcp")
+    try:
+        path = urllib.parse.unquote(path)
+        name = urllib.parse.unquote(name)
+    except Exception:
+        pass
     return Profile(name, host, port, uuid, path, security, transport)
 
 
@@ -297,3 +303,136 @@ def get_public_ip():
             return r.read().decode().strip()
     except Exception:
         return "?"
+
+
+TUN_IFACE_NAME = "turbobee"
+
+
+class TunTrafficMonitor:
+    """Считывает суммарные счётчики TUN-интерфейса (аналог KaPRO).
+
+    KaPRO читает psutil.net_io_counters(pernic=True). Здесь то же самое
+    делаем через Windows API GetIfTable2 (ctypes, без внешних зависимостей):
+    находим сетевой адаптер sing-box TUN ("turbobee") и берём InOctets/
+    OutOctets — это cumulative-счётчики за сессию подключения.
+    """
+
+    def __init__(self, iface_name=TUN_IFACE_NAME):
+        self.iface_name = iface_name
+        self.prev_up = 0
+        self.prev_down = 0
+        self.prev_ts = None
+
+    def _if_table(self):
+        import ctypes
+        from ctypes import wintypes
+        iphlpapi = ctypes.WinDLL("iphlpapi", use_last_error=True)
+        iphlpapi.GetIfTable2.restype = wintypes.DWORD
+        iphlpapi.GetIfTable2.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+        iphlpapi.FreeMibTable.argtypes = [wintypes.LPVOID]
+
+        # Структура MIB_IF_ROW2 (достаточно полей для вычисления смещений)
+        class MIB_IF_ROW2(ctypes.Structure):
+            _fields_ = [
+                ("InterfaceLuid", ctypes.c_uint64),
+                ("InterfaceIndex", ctypes.c_uint32),
+                ("InterfaceGuid", ctypes.c_ubyte * 16),
+                ("Alias", ctypes.c_wchar * 257),
+                ("Description", ctypes.c_wchar * 257),
+                ("PhysicalAddressLength", ctypes.c_uint32),
+                ("PhysicalAddress", ctypes.c_ubyte * 32),
+                ("PermanentPhysicalAddress", ctypes.c_ubyte * 32),
+                ("Mtu", ctypes.c_uint32),
+                ("Type", ctypes.c_uint32),
+                ("TunnelType", ctypes.c_uint32),
+                ("MediaType", ctypes.c_uint32),
+                ("PhysicalMediumType", ctypes.c_uint32),
+                ("AccessType", ctypes.c_uint32),
+                ("DirectionType", ctypes.c_uint32),
+                ("InterfaceAndOperStatusFlags", ctypes.c_ubyte),
+                ("OperStatus", ctypes.c_uint32),
+                ("AdminStatus", ctypes.c_uint32),
+                ("MediaConnectState", ctypes.c_uint32),
+                ("NetworkGuid", ctypes.c_ubyte * 16),
+                ("ConnectionType", ctypes.c_uint32),
+                ("TransmitLinkSpeed", ctypes.c_uint64),
+                ("ReceiveLinkSpeed", ctypes.c_uint64),
+                ("InOctets", ctypes.c_uint64),
+                ("InUcastPkts", ctypes.c_uint64),
+                ("InNUcastPkts", ctypes.c_uint64),
+                ("InDiscards", ctypes.c_uint64),
+                ("InErrors", ctypes.c_uint64),
+                ("InUnknownProtos", ctypes.c_uint64),
+                ("InUcastOctets", ctypes.c_uint64),
+                ("InMulticastOctets", ctypes.c_uint64),
+                ("InBroadcastOctets", ctypes.c_uint64),
+                ("OutOctets", ctypes.c_uint64),
+                ("OutUcastPkts", ctypes.c_uint64),
+                ("OutNUcastPkts", ctypes.c_uint64),
+                ("OutDiscards", ctypes.c_uint64),
+                ("OutErrors", ctypes.c_uint64),
+                ("OutUcastOctets", ctypes.c_uint64),
+                ("OutMulticastOctets", ctypes.c_uint64),
+                ("OutBroadcastOctets", ctypes.c_uint64),
+                ("OutQLen", ctypes.c_uint64),
+            ]
+
+        class MIB_IF_TABLE2(ctypes.Structure):
+            _fields_ = [
+                ("NumEntries", ctypes.c_uint32),
+                ("Table", MIB_IF_ROW2 * 1),
+            ]
+
+        table_ptr = ctypes.c_void_p()
+        if iphlpapi.GetIfTable2(ctypes.byref(table_ptr)) != 0:
+            return []
+        try:
+            table = ctypes.cast(table_ptr, ctypes.POINTER(MIB_IF_TABLE2)).contents
+            n = table.NumEntries
+            rows = (MIB_IF_ROW2 * n).from_address(ctypes.addressof(table.Table[0]))
+            return [
+                {"name": rows[i].Alias, "up": rows[i].OutOctets, "down": rows[i].InOctets}
+                for i in range(n)
+            ]
+        finally:
+            iphlpapi.FreeMibTable(table_ptr)
+
+    def sample(self):
+        """Возвращает (up_total, down_total, up_bps, down_bps) за последний интервал.
+        up_total/down_total — cumulative байты за сессию; bps — текущая скорость."""
+        try:
+            table = self._if_table()
+        except Exception:
+            return None
+        for iface in table:
+            if iface["name"].lower() == self.iface_name.lower():
+                up, down = iface["up"], iface["down"]
+                up_bps = down_bps = 0.0
+                if self.prev_ts is not None:
+                    dt = time.time() - self.prev_ts
+                    if dt > 0:
+                        up_bps = max(0, up - self.prev_up) / dt
+                        down_bps = max(0, down - self.prev_down) / dt
+                self.prev_up, self.prev_down, self.prev_ts = up, down, time.time()
+                return up, down, up_bps, down_bps
+        return None
+
+
+def format_rate(bps):
+    """Байты/сек → человекочитаемая строка."""
+    if bps < 1024:
+        return "%.0f Б/с" % bps
+    if bps < 1024 * 1024:
+        return "%.1f КБ/с" % (bps / 1024)
+    return "%.1f МБ/с" % (bps / (1024 * 1024))
+
+
+def format_bytes(total):
+    """Суммарные байты → человекочитаемая строка."""
+    if total < 1024:
+        return "%d Б" % total
+    if total < 1024 * 1024:
+        return "%.1f КБ" % (total / 1024)
+    if total < 1024 * 1024 * 1024:
+        return "%.1f МБ" % (total / (1024 * 1024))
+    return "%.2f ГБ" % (total / (1024 * 1024 * 1024))

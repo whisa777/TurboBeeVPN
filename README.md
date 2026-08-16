@@ -15,13 +15,13 @@ VLESS VPN-клиент с Bee-оформлением. Простой и надё
 
 ### Android
 
-1. Скачайте `TurboBeeVPN.apk`
+1. Скачайте [`TurboBeeVPN.apk`](https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.apk)
 2. Откройте файл и разрешите установку из неизвестных источников
 3. Добавьте свой ключ через кнопку «+»
 
 ### Windows
 
-1. Скачайте `TurboBeeVPN.exe`
+1. Скачайте [`TurboBeeVPN.exe`](https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.exe)
 2. Запустите от имени администратора (VPN-туннель требует прав администратора)
 3. Добавьте свой ключ через кнопку «+ Добавить ключ»
 

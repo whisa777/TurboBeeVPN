@@ -5,7 +5,7 @@ import webbrowser
 
 from app_core import (
     Profile, parse_vless, load_config, save_config, build_singbox_config,
-    VpnEngine, SystemProxy, SOCKS_PORT,
+    VpnEngine, SystemProxy, SOCKS_PORT, TunTrafficMonitor, format_rate, format_bytes,
 )
 
 LANG = {
@@ -42,6 +42,10 @@ LANG = {
         "proxy_set": "VPN включён: весь трафик через туннель",
         "proxy_unset": "VPN выключен: трафик идёт напрямую",
         "add_key_btn": "+  Добавить ключ",
+        "traffic_label": "Трафик",
+        "traffic_down": "↓",
+        "traffic_up": "↑",
+        "traffic_total": "За сессию: ↓ %s · ↑ %s",
     },
     "en": {
         "app_title": "TurboBee VPN",
@@ -76,6 +80,10 @@ LANG = {
         "proxy_set": "VPN on: all traffic through tunnel",
         "proxy_unset": "VPN off: traffic goes direct",
         "add_key_btn": "+  Add key",
+        "traffic_label": "Traffic",
+        "traffic_down": "↓",
+        "traffic_up": "↑",
+        "traffic_total": "Session: ↓ %s · ↑ %s",
     },
 }
 
@@ -175,12 +183,14 @@ class TurboBeeApp:
         self.cfg = load_config()
         self.engine = VpnEngine()
         self.engine.add_log_listener(self._on_engine_log)
+        self.traffic = TunTrafficMonitor()
         self.connected = False
         self._build_ui()
         self.apply_theme()
         self.apply_language()
         self.refresh_profiles()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._poll_traffic_loop()
 
     def tr(self, key):
         return LANG.get(self.cfg.get("language", "ru"), LANG["ru"]).get(key, key)
@@ -226,8 +236,22 @@ class TurboBeeApp:
         self.status_lbl = tk.Label(self.status_card.inner(), text="", font=("Segoe UI", 15, "bold"))
         self.status_lbl.pack(pady=(0, 2))
         self.status_hint = tk.Label(self.status_card.inner(), text="", font=("Segoe UI", 9))
-        self.status_hint.pack(pady=(0, 14))
-        for w in (self.status_card.inner(), self.status_dot, self.status_lbl, self.status_hint):
+        self.status_hint.pack(pady=(0, 8))
+
+        self.traffic_frame = tk.Frame(self.status_card.inner(), bg=self.colors()["surface"])
+        self.traffic_frame.pack(fill="x", padx=14, pady=(0, 12))
+        self.traffic_up_lbl = tk.Label(self.traffic_frame, text="↑ 0 Б/с", font=("Segoe UI", 10, "bold"),
+                                       bg=self.colors()["surface"])
+        self.traffic_up_lbl.pack(side="left", padx=4)
+        self.traffic_down_lbl = tk.Label(self.traffic_frame, text="↓ 0 Б/с", font=("Segoe UI", 10, "bold"),
+                                         bg=self.colors()["surface"])
+        self.traffic_down_lbl.pack(side="right", padx=4)
+        self.traffic_total_lbl = tk.Label(self.status_card.inner(), text="", font=("Segoe UI", 8),
+                                          bg=self.colors()["surface"])
+        self.traffic_total_lbl.pack(pady=(0, 10))
+
+        for w in (self.status_card.inner(), self.status_dot, self.status_lbl, self.status_hint,
+                  self.traffic_frame, self.traffic_up_lbl, self.traffic_down_lbl, self.traffic_total_lbl):
             w.bind("<Button-1>", lambda e: self.toggle_connect())
         self._draw_status_dot()
 
@@ -296,6 +320,10 @@ class TurboBeeApp:
         self.status_dot.configure(bg=c["surface"])
         self.status_lbl.configure(bg=c["surface"], fg=c["text"])
         self.status_hint.configure(bg=c["surface"], fg=c["text_secondary"])
+        self.traffic_frame.configure(bg=c["surface"])
+        for w in (self.traffic_up_lbl, self.traffic_down_lbl):
+            w.configure(bg=c["surface"], fg=c["primary"])
+        self.traffic_total_lbl.configure(bg=c["surface"], fg=c["text_secondary"])
         self._draw_status_dot()
         self.key_card.set_bg(c["surface"])
         for w in (self.current_key_title, self.current_key_lbl, self.current_key_proto):
@@ -360,6 +388,28 @@ class TurboBeeApp:
             label = "✔" if self.connected else "⏻"
             cv.create_text(46, 46, text=label, fill="#1A1507" if not self.connected else "#FFFFFF",
                            font=("Segoe UI", 30, "bold"))
+        except Exception:
+            pass
+
+    def _poll_traffic_loop(self):
+        if self.connected:
+            self._update_traffic_ui()
+        self.root.after(1000, self._poll_traffic_loop)
+
+    def _update_traffic_ui(self):
+        try:
+            t = self.tr
+            sample = self.traffic.sample()
+            if not sample:
+                self.traffic_up_lbl.configure(text="↑ --")
+                self.traffic_down_lbl.configure(text="↓ --")
+                self.traffic_total_lbl.configure(text=t("traffic_total") % ("--", "--"))
+                return
+            up_total, down_total, up_bps, down_bps = sample
+            self.traffic_up_lbl.configure(text="↑ " + format_rate(up_bps))
+            self.traffic_down_lbl.configure(text="↓ " + format_rate(down_bps))
+            self.traffic_total_lbl.configure(
+                text=t("traffic_total") % (format_bytes(down_total), format_bytes(up_total)))
         except Exception:
             pass
 
