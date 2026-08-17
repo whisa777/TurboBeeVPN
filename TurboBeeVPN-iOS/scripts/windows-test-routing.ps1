@@ -6,7 +6,8 @@
 #   powershell -ExecutionPolicy Bypass -File .\windows-test-routing.ps1 -SingBoxPath C:\...\sing-box.exe -SrsDir C:\...\WindowsVPN
 param(
     [string]$SingBoxPath = "sing-box.exe",
-    [string]$SrsDir = $PSScriptRoot
+    [string]$SrsDir = $PSScriptRoot,
+    [string]$VlessUrl = "vless://REPLACE_WITH_YOUR_KEY@example.com:443?type=ws"
 )
 $ErrorActionPreference = "Stop"
 
@@ -36,8 +37,11 @@ $ruleSet = @(
     @{ type = "local"; tag = "geosite-ru"; format = "binary"; path = $srsGeosite }
 )
 
-# VLESS-ключ из TurboBeeVPN/ContentView.swift
-$vless = "vless://728d5344-1b29-4222-b281-d7f054542b86@185.133.173.72:8443?encryption=none&host=&path=%2Fws&security=none&type=ws#Server-ALINA"
+# VLESS-ключ передаётся параметром -VlessUrl
+if ($VlessUrl -like "*REPLACE_WITH_YOUR_KEY*") {
+    Write-Host "Предупреждение: не передан реальный ключ (-VlessUrl), проверка туннеля не сработает" -ForegroundColor Yellow
+}
+$vless = $VlessUrl
 $m = [regex]::Match($vless, "vless://([a-f0-9-]+)@([^:/?#]+):(\d+)([^#]*)")
 $proxy = @{
     type = "vless"; tag = "proxy"

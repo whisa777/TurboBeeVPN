@@ -8,8 +8,6 @@ struct ContentView: View {
     @State private var errorText = ""
     @State private var busy = false
 
-    private let defaultLink = "vless://728d5344-1b29-4222-b281-d7f054542b86@185.133.173.72:8443?encryption=none&host=&path=%2Fws&security=none&type=ws#Server-ALINA"
-
     var body: some View {
         NavigationView {
             Form {
@@ -19,8 +17,14 @@ struct ContentView: View {
                         .font(.system(.footnote, design: .monospaced))
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
-                    Button("Вставить ключ по умолчанию") {
-                        linkText = defaultLink
+                    Button {
+                        if let clip = UIPasteboard.general.string, !clip.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            linkText = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+                        } else {
+                            showError("Буфер обмена пуст. Сначала скопируйте ссылку vless://")
+                        }
+                    } label: {
+                        Label("Вставить из буфера обмена", systemImage: "doc.on.clipboard")
                     }
                 }
 
@@ -64,8 +68,6 @@ struct ContentView: View {
                     if let saved = ProfileStore.shared.profile {
                         linkText = savedLink(for: saved)
                         bypassRu = saved.bypassRu
-                    } else {
-                        linkText = defaultLink
                     }
                 }
                 vpn.load()

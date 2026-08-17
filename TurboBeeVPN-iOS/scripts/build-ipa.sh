@@ -28,6 +28,20 @@ if [ ! -d "${APP}" ]; then
   exit 1
 fi
 
+# Ad-hoc подпись с entitlements (Network Extension).
+# Sideloadly / AltStore / SideStore читают entitlements из сигнатуры при ре-подписи.
+# Без этого capability не переносится, и saveToPreferences() падает с
+# NEVPNErrorDomain code 5 "permission denied" (профиль VPN не создаётся).
+echo ">>> ad-hoc signing with entitlements (packet-tunnel-provider)"
+if [ -d "${APP}/PlugIns/PacketTunnel.appex" ]; then
+  codesign --force --sign - \
+    --entitlements "${PWD}/PacketTunnel/PacketTunnel.entitlements" \
+    "${APP}/PlugIns/PacketTunnel.appex"
+fi
+codesign --force --sign - \
+  --entitlements "${PWD}/TurboBeeVPN/TurboBeeVPN.entitlements" \
+  "${APP}"
+
 echo ">>> packing IPA"
 mkdir -p "${BUILD_DIR}/Payload"
 cp -R "${APP}" "${BUILD_DIR}/Payload/"
