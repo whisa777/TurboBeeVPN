@@ -32,3 +32,12 @@ jobs:
         with:
           name: TurboBeeVPN-unsigned-ipa
           path: build/TurboBeeVPN-unsigned.ipa
+
+      - name: Publish IPA to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-build --yes || true
+          gh release create latest-build build/TurboBeeVPN-unsigned.ipa \
+            --title "Latest build" \
+            --notes "Auto-built unsigned IPA. Sideload with Sideloadly/AltStore."
