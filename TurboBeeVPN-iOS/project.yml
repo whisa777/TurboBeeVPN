@@ -20,6 +20,7 @@ targets:
     deploymentTarget: "15.0"
     sources:
       - path: TurboBeeVPN
+      - path: Shared/Profile.swift
     resources:
       - path: TurboBeeVPN/Assets.xcassets
     settings:
@@ -43,8 +44,11 @@ targets:
       - path: PacketTunnel
         excludes:
           - Resources
+      - path: Shared/Profile.swift
     resources:
       - path: PacketTunnel/Resources
+        buildPhase: resources
+      - path: Shared/RoutingData.json
         buildPhase: resources
     settings:
       base:

@@ -1,5 +1,6 @@
 import Foundation
 import Libbox
+import Network
 import NetworkExtension
 import os
 
@@ -106,7 +107,7 @@ extension PlatformInterface: LibboxPlatformInterfaceProtocol {
         semaphore.wait()
     }
 
-    private func updateInterface(_ listener: LibboxInterfaceUpdateListenerProtocol, _ path: NWPath) {
+    private func updateInterface(_ listener: LibboxInterfaceUpdateListenerProtocol, _ path: Network.NWPath) {
         guard path.status != .unsatisfied,
               let defaultInterface = path.availableInterfaces.first
         else {

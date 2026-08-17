@@ -1,6 +1,7 @@
 import Foundation
 
 /// Профиль сервера — порт модели `Profile` из Android-версии.
+/// Общий для приложения и расширения (компилируется в оба таргета).
 struct Profile: Codable, Equatable {
     var uuid: String = ""
     var host: String = ""
