@@ -55,14 +55,22 @@ final class VPNManager: ObservableObject {
                 completion?(error)
                 return
             }
-            self.manager = managers?.first ?? {
+            // Важно: на устройстве могут быть VPN-конфиги ДРУГИХ приложений
+            // (например, собственный VPN SideStore, который ставит приложения).
+            // Берём ТОЛЬКО свой конфиг по bundle id расширения, иначе
+            // saveToPreferences() по чужому конфигу вернёт "permission denied".
+            self.manager = managers?.first(where: { manager in
+                (manager.protocolConfiguration as? NETunnelProviderProtocol)?
+                    .providerBundleIdentifier == self.tunnelBundleId
+            })
+            if self.manager == nil {
                 let m = NETunnelProviderManager()
                 let p = NETunnelProviderProtocol()
                 p.providerBundleIdentifier = self.tunnelBundleId
                 p.serverAddress = ""
                 m.protocolConfiguration = p
-                return m
-            }()
+                self.manager = m
+            }
             self.refreshStatus()
             completion?(nil)
         }
