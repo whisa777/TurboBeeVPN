@@ -6,6 +6,7 @@ set -euo pipefail
 SING_BOX_VERSION="${SING_BOX_VERSION:-testing}"
 GOMOBILE_VERSION="v0.1.13"
 OUT_DIR="${1:-Frameworks}"
+PROJECT_DIR="$(pwd)"
 
 echo ">>> installing gomobile/gobind (${GOMOBILE_VERSION})"
 go install "github.com/sagernet/gomobile/cmd/gomobile@${GOMOBILE_VERSION}"
@@ -20,7 +21,7 @@ echo ">>> building Libbox.xcframework (target: apple, platform: ios,iossimulator
 cd "${WORK}"
 go run ./cmd/internal/build_libbox -target apple -platform ios,iossimulator
 
-mkdir -p "${OUT_DIR}"
-rm -rf "${OUT_DIR}/Libbox.xcframework"
-cp -R Libbox.xcframework "${OUT_DIR}/"
-echo ">>> done: ${OUT_DIR}/Libbox.xcframework"
+mkdir -p "${PROJECT_DIR}/${OUT_DIR}"
+rm -rf "${PROJECT_DIR}/${OUT_DIR}/Libbox.xcframework"
+cp -R Libbox.xcframework "${PROJECT_DIR}/${OUT_DIR}/"
+echo ">>> done: ${PROJECT_DIR}/${OUT_DIR}/Libbox.xcframework"
