@@ -1,0 +1,19 @@
+# Build
+build/
+DerivedData/
+*.xcarchive
+*.ipa
+
+# Frameworks (собирается CI-скриптом)
+Frameworks/*.xcframework
+
+# Xcode / xcodegen
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Environment
+.env
