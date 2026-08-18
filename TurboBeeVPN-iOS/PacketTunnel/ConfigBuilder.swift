@@ -48,7 +48,7 @@ enum ConfigBuilder {
                 [
                     "type": "tun",
                     "tag": "tun-in",
-                    "address": ["10.10.0.1/30"],
+                    "address": ["10.10.0.1/30", "fd00::1/64"],
                     "mtu": 1500,
                     "auto_redirect": false,
                     "stack": "gvisor",

@@ -50,8 +50,29 @@ extension PlatformInterface: LibboxPlatformInterfaceProtocol {
         ipv4Settings.includedRoutes = [NEIPv4Route.default()]
         settings.ipv4Settings = ipv4Settings
 
+        // IPv6: забираем в туннель, иначе трафик по IPv6 обходит VPN и на
+        // провайдерах с «битым» IPv6 RU-сайты не открываются.
+        var v6Addresses: [String] = []
+        var v6Prefixes: [NSNumber] = []
+        if let iterator = options?.getInet6Address() {
+            while iterator.hasNext() {
+                if let prefix = iterator.next() {
+                    v6Addresses.append(prefix.address())
+                    v6Prefixes.append(NSNumber(value: prefix.prefix()))
+                }
+            }
+        }
+        if v6Addresses.isEmpty {
+            v6Addresses = ["fd00::1"]
+            v6Prefixes = [64]
+        }
+        let ipv6Settings = NEIPv6Settings(addresses: v6Addresses, networkPrefixLengths: v6Prefixes)
+        ipv6Settings.includedRoutes = [NEIPv6Route.default()]
+        settings.ipv6Settings = ipv6Settings
+
         // DNS: принудительно в туннель, чтобы правило hijack-dns ловило запросы.
-        let dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
+        // Первым Яндекс-DNS (77.88.8.8): 8.8.8.8/1.1.1.1 отравляются RKN в РФ.
+        let dnsSettings = NEDNSSettings(servers: ["77.88.8.8", "1.1.1.1", "8.8.8.8"])
         dnsSettings.matchDomains = [""]
         dnsSettings.matchDomainsNoSearch = true
         settings.dnsSettings = dnsSettings
