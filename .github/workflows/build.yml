@@ -39,11 +39,15 @@ jobs:
           name: TurboBeeVPN-unsigned-ipa
           path: TurboBeeVPN-iOS/build/TurboBeeVPN-unsigned.ipa
 
-      - name: Publish IPA to GitHub Release
+      - name: Publish IPA to private repo
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.IOS_RELEASE_TOKEN }}
         run: |
-          gh release delete latest-build --yes || true
-          gh release create latest-build build/TurboBeeVPN-unsigned.ipa \
-            --title "Latest build" \
-            --notes "Auto-built unsigned IPA. Sideload with Sideloadly/AltStore."
+          if ! gh release view latest-build --repo whisa777/TurboBeeVPN-ios >/dev/null 2>&1; then
+            gh release create latest-build build/TurboBeeVPN-unsigned.ipa \
+              --repo whisa777/TurboBeeVPN-ios \
+              --title "Latest build" \
+              --notes "Private unsigned IPA. Sideload with Sideloadly/AltStore."
+          else
+            gh release upload latest-build build/TurboBeeVPN-unsigned.ipa --repo whisa777/TurboBeeVPN-ios --clobber
+          fi
