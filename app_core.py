@@ -1,5 +1,7 @@
+import base64
 import json
 import os
+import platform
 import re
 import socket
 import subprocess
@@ -8,6 +10,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 import winreg
 
 APP_NAME = "TurboBee VPN"
@@ -99,13 +102,89 @@ def save_config(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
-def build_singbox_config(profile, bypass_ru):
-    """Строит конфиг sing-box по образцу KaPRO TUN: native TUN (gvisor, mtu 1400),
-    авто-маршрутизация, системный DNS. Правила geoip-ru/geosite-ru берутся из
-    скомпилированных rule-set файлов (.srs), которые кладёт VpnEngine."""
+HWID_FILE = os.path.join(CONFIG_DIR, "hwid.txt")
+
+
+def get_hwid():
+    """Стабильный идентификатор установки: случайный UUID из первого запуска,
+    хранится рядом с конфигом (%APPDATA%\\TurboBeeVPN\\hwid.txt)."""
+    ensure_config_dir()
+    try:
+        with open(HWID_FILE, "r", encoding="utf-8") as f:
+            hwid = f.read().strip()
+        if hwid:
+            return hwid
+    except Exception:
+        pass
+    hwid = str(uuid.uuid4())
+    with open(HWID_FILE, "w", encoding="utf-8") as f:
+        f.write(hwid)
+    return hwid
+
+
+def fetch_subscription(url, timeout=10, max_bytes=2 * 1024 * 1024):
+    """Скачивает подписку (список vless:// или base64 от него) и возвращает
+    список Profile. Шлёт x-hwid/x-device-model — привязка устройства на сервере."""
+    req = urllib.request.Request(url.strip(), headers={
+        "User-Agent": "TurboBeeVPN/1.0 (subscription)",
+        "x-hwid": get_hwid(),
+        "x-device-model": "Windows %s; %s" % (platform.release(), platform.machine()),
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        if not (200 <= r.status < 300):
+            raise ValueError("HTTP %d" % r.status)
+        body = r.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError("Ответ подписки слишком большой")
+    text = body.decode("utf-8", errors="replace").strip()
+    if not text:
+        raise ValueError("Подписка вернула пустой ответ")
+    content = _decode_if_base64(text)
+    profiles = []
+    for line in content.splitlines():
+        l = line.strip()
+        if not l.lower().startswith("vless://"):
+            continue
+        try:
+            profiles.append(parse_vless(l))
+        except Exception:
+            pass
+    if not profiles:
+        raise ValueError("В подписке не найдено серверов vless")
+    return profiles
+
+
+def _decode_if_base64(text):
+    compact = re.sub(r"\s+", "", text)
+    if not compact or not re.fullmatch(r"[A-Za-z0-9+/=_-]+", compact):
+        return text
+    normalized = compact.replace("-", "+").replace("_", "/")
+    normalized += "=" * (-len(normalized) % 4)
+    try:
+        decoded = base64.b64decode(normalized).decode("utf-8", errors="replace")
+        if "vless://" in decoded:
+            return decoded
+    except Exception:
+        pass
+    return text
+
+
+def build_singbox_config(profile, bypass_ru, use_tun=True):
+    """Строит конфиг sing-box по образцу KaPRO.
+
+    use_tun=True — native TUN (gvisor, mtu 1400), авто-маршрутизация (требуются
+    права администратора). use_tun=False — только mixed-inbound на 127.0.0.1,
+    работает без прав (трафик направляется через системный прокси).
+    Правила geoip-ru/geosite-ru берутся из скомпилированных rule-set (.srs)."""
     routes = [
         {"action": "sniff"},
-        {"protocol": "dns", "action": "hijack-dns"},
+        # Белый список: сайты, не работающие с зарубежных IP (Сбер, Госуслуги, ВК и др.)
+        # всегда уходят напрямую — и в TUN, и в прокси-режиме.
+        {
+            "action": "route",
+            "domain": RU_WHITELIST,
+            "outbound": "direct",
+        },
     ]
     rule_set = []
     if bypass_ru:
@@ -141,6 +220,28 @@ def build_singbox_config(profile, bypass_ru):
             "headers": {"Host": profile.host},
         }
 
+    inbounds = [
+        {
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": LOCALHOST_IP,
+            "listen_port": SOCKS_PORT,
+        },
+    ]
+    if use_tun:
+        routes.insert(1, {"protocol": "dns", "action": "hijack-dns"})
+        inbounds.insert(0, {
+            "type": "tun",
+            "tag": "tun-in",
+            "interface_name": "turbobee",
+            "address": ["10.0.0.1/16", "fc00::1/64"],
+            "mtu": 1400,
+            "auto_route": True,
+            "strict_route": False,
+            "stack": "gvisor",
+            "endpoint_independent_nat": True,
+        })
+
     config = {
         "log": {"level": "info"},
         "dns": {
@@ -148,25 +249,7 @@ def build_singbox_config(profile, bypass_ru):
             "final": "dns-local",
             "strategy": "ipv4_only",
         },
-        "inbounds": [
-            {
-                "type": "tun",
-                "tag": "tun-in",
-                "interface_name": "turbobee",
-                "address": ["10.0.0.1/16", "fc00::1/64"],
-                "mtu": 1400,
-                "auto_route": True,
-                "strict_route": False,
-                "stack": "gvisor",
-                "endpoint_independent_nat": True,
-            },
-            {
-                "type": "mixed",
-                "tag": "mixed-in",
-                "listen": LOCALHOST_IP,
-                "listen_port": SOCKS_PORT,
-            },
-        ],
+        "inbounds": inbounds,
         "outbounds": [
             outbound,
             {"type": "direct", "tag": "direct"},
@@ -288,13 +371,25 @@ class VpnEngine:
     def is_running(self):
         return self.process is not None and self.process.poll() is None
 
-    def test_proxy(self):
-        try:
-            import urllib.request
-            with urllib.request.urlopen("https://api.ipify.org", timeout=10) as r:
-                return r.status == 200
-        except Exception:
-            return False
+    def test_proxy(self, timeout=15, attempts=3):
+        """Проверяет, что sing-box реально проксирует трафик, запросом через
+        собственный mixed-inbound (127.0.0.1:SOCKS_PORT). Не зависит от TUN."""
+        for _ in range(attempts):
+            if not self.is_running():
+                return False
+            try:
+                handler = urllib.request.ProxyHandler({
+                    "http": "http://127.0.0.1:%d" % SOCKS_PORT,
+                    "https": "http://127.0.0.1:%d" % SOCKS_PORT,
+                })
+                opener = urllib.request.build_opener(handler)
+                with opener.open("https://api.ipify.org", timeout=timeout) as r:
+                    if r.status == 200:
+                        return True
+            except Exception:
+                pass
+            time.sleep(1.5)
+        return False
 
 
 def get_public_ip():
@@ -306,6 +401,20 @@ def get_public_ip():
 
 
 TUN_IFACE_NAME = "turbobee"
+
+# Белый список: домены, которые часто блокируют доступ с зарубежных IP
+# (банки, госуслуги, госпорталы). Их трафик всегда идёт напрямую, в обход VPN.
+RU_WHITELIST = [
+    "sberbank.ru", "sber.ru", "sberbankid.ru", "online.sberbank.ru", "sberbank-insurance.ru",
+    "gosuslugi.ru", "gosuslugi.online", "esia.gosuslugi.ru",
+    "vk.com", "vk.ru", "ok.ru", "vkontakte.ru", "mail.ru", "mycdn.me",
+    "mos.ru", "uslugi.mosreg.ru", "mosreg.ru", "moscow.gosuslugi.ru", "um.mos.ru",
+    "nalog.ru", "zakupki.gov.ru", "government.ru", "kremlin.ru", "mintrud.gov.ru", "gosmonitor.ru",
+    "rzd.ru", "rt.ru", "pochtabank.ru",
+    "avito.ru", "ozon.ru", "wildberries.ru", "wildberries.by",
+    "vtb.ru", "alfabank.ru", "tinkoff.ru", "gazprombank.ru", "raiffeisen.ru", "open.ru", "psbank.ru",
+    "mk.ru", "rbc.ru", "kaspersky.ru",
+]
 
 
 class TunTrafficMonitor:

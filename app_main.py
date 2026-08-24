@@ -6,6 +6,7 @@ import webbrowser
 from app_core import (
     Profile, parse_vless, load_config, save_config, build_singbox_config,
     VpnEngine, SystemProxy, SOCKS_PORT, TunTrafficMonitor, format_rate, format_bytes,
+    fetch_subscription,
 )
 
 LANG = {
@@ -37,15 +38,19 @@ LANG = {
         "delete_title": "Удалить ключ",
         "delete_msg": "Удалить ключ «%s»?",
         "connect_error": "Ошибка подключения",
-        "enter_link": "Вставьте vless-ссылку",
+        "enter_link": "Вставьте vless-ссылку или ссылку подписки (http/https)",
         "invalid_link": "Неверная ссылка",
         "proxy_set": "VPN включён: весь трафик через туннель",
         "proxy_unset": "VPN выключен: трафик идёт напрямую",
+        "tun_active": "VPN включён: TUN-режим",
         "add_key_btn": "+  Добавить ключ",
         "traffic_label": "Трафик",
         "traffic_down": "↓",
         "traffic_up": "↑",
         "traffic_total": "За сессию: ↓ %s · ↑ %s",
+        "sub_loading": "Загружаю подписку...",
+        "sub_added": "Подписка добавлена: новых серверов — %d",
+        "sub_error": "Ошибка подписки",
     },
     "en": {
         "app_title": "TurboBee VPN",
@@ -75,15 +80,19 @@ LANG = {
         "delete_title": "Delete key",
         "delete_msg": "Delete key «%s»?",
         "connect_error": "Connection error",
-        "enter_link": "Paste vless link",
+        "enter_link": "Paste vless or subscription link (http/https)",
         "invalid_link": "Invalid link",
         "proxy_set": "VPN on: all traffic through tunnel",
         "proxy_unset": "VPN off: traffic goes direct",
+        "tun_active": "VPN on: TUN mode",
         "add_key_btn": "+  Add key",
         "traffic_label": "Traffic",
         "traffic_down": "↓",
         "traffic_up": "↑",
         "traffic_total": "Session: ↓ %s · ↑ %s",
+        "sub_loading": "Loading subscription...",
+        "sub_added": "Subscription added: %d new servers",
+        "sub_error": "Subscription error",
     },
 }
 
@@ -185,6 +194,7 @@ class TurboBeeApp:
         self.engine.add_log_listener(self._on_engine_log)
         self.traffic = TunTrafficMonitor()
         self.connected = False
+        self.proxy_mode = False
         self._build_ui()
         self.apply_theme()
         self.apply_language()
@@ -505,27 +515,49 @@ class TurboBeeApp:
         threading.Thread(target=self._do_connect, daemon=True).start()
 
     def _do_connect(self):
+        self.proxy_mode = False
         try:
             profiles = self.cfg.get("profiles", [])
             p = profiles[self.cfg.get("current", 0)]
-            config = build_singbox_config(Profile(
+            profile = Profile(
                 p.get("name", "?"), p.get("host"), int(p.get("port")),
-                p.get("uuid"), p.get("path", "/"), p.get("security", "none"), p.get("transport", "tcp")),
-                self.cfg.get("bypass_ru", True))
+                p.get("uuid"), p.get("path", "/"), p.get("security", "none"), p.get("transport", "tcp"))
+            bypass_ru = self.cfg.get("bypass_ru", True)
+            use_tun = _is_admin()
+
+            config = build_singbox_config(profile, bypass_ru, use_tun=use_tun)
             self.engine.start(config)
-            ok = self.engine.test_proxy()
+            ok = False
+            if use_tun:
+                ok = self.engine.test_proxy()
+                if not ok:
+                    # TUN не взлетел (напр. драйвер wintun) — откатываемся на прокси-режим
+                    self.engine.stop()
+                    config = build_singbox_config(profile, bypass_ru, use_tun=False)
+                    self.engine.start(config)
+                    ok = self.engine.test_proxy()
+                    self.proxy_mode = True
+            else:
+                ok = self.engine.test_proxy()
+                self.proxy_mode = True
             if ok:
                 self.connected = True
+                SystemProxy.set_proxy(True)
             else:
                 self.engine.stop()
+                SystemProxy.set_proxy(False)
         except Exception as e:
+            self.engine.stop()
+            SystemProxy.set_proxy(False)
             self._emit_error(str(e))
         self.root.after(0, self._update_status_ui)
         self.refresh_proxy_label()
 
     def disconnect(self):
         self.connected = False
+        self.proxy_mode = False
         self.engine.stop()
+        SystemProxy.set_proxy(False)
         self._update_status_ui()
         self.refresh_proxy_label()
 
@@ -536,7 +568,10 @@ class TurboBeeApp:
     def refresh_proxy_label(self):
         t = self.tr
         if self.connected:
-            self.proxy_lbl.configure(text=t("proxy_set"))
+            if self.proxy_mode:
+                self.proxy_lbl.configure(text=t("proxy_set"))
+            else:
+                self.proxy_lbl.configure(text=t("tun_active"))
         else:
             self.proxy_lbl.configure(text=t("proxy_unset"))
 
@@ -567,6 +602,11 @@ class TurboBeeApp:
             uri = entry.get().strip()
             if not uri:
                 return
+            low = uri.lower()
+            if low.startswith("http://") or low.startswith("https://"):
+                dlg.destroy()
+                self._import_subscription(uri)
+                return
             try:
                 p = parse_vless(uri)
             except ValueError:
@@ -592,6 +632,56 @@ class TurboBeeApp:
         tk.Button(dlg, text=t("ok"), command=submit, bg=self.colors()["primary"],
                   fg=self.colors()["primary_text"], relief="flat", padx=24, pady=6, cursor="hand2").pack(pady=(4, 12))
         dlg.bind("<Return>", lambda e: submit())
+
+    def _import_subscription(self, url):
+        t = self.tr
+        self.status_lbl.configure(text=t("sub_loading"))
+        self.root.configure(cursor="wait")
+        def worker():
+            try:
+                profiles = fetch_subscription(url)
+                def done():
+                    self.root.configure(cursor="")
+                    added = self._merge_profiles(profiles)
+                    messagebox.showinfo(t("add_key"), t("sub_added") % added)
+                self.root.after(0, done)
+            except Exception as e:
+                msg = str(e)
+                def fail():
+                    self.root.configure(cursor="")
+                    self._update_status_ui()
+                    messagebox.showerror(t("sub_error"), msg)
+                self.root.after(0, fail)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _merge_profiles(self, parsed_list):
+        """Добавляет профили без дублей (uuid+host+port). Возвращает число новых."""
+        profiles = self.cfg.get("profiles", [])
+        had_profiles = bool(profiles)
+        first_new_index = None
+        added = 0
+        for p in parsed_list:
+            exists = False
+            for existing in profiles:
+                if (existing.get("uuid") == p.uuid and existing.get("host") == p.host
+                        and int(existing.get("port", 0)) == p.port):
+                    exists = True
+                    break
+            if exists:
+                continue
+            if not p.name:
+                p.name = "%s %d" % (self.tr("server_name_prefix"), len(profiles) + 1)
+            profiles.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
+                             "path": p.path, "security": p.security, "transport": p.transport})
+            if first_new_index is None:
+                first_new_index = len(profiles) - 1
+            added += 1
+        if added > 0:
+            if not had_profiles:
+                self.cfg["current"] = first_new_index
+            save_config(self.cfg)
+            self.refresh_profiles()
+        return added
 
     def open_settings(self):
         t = self.tr
@@ -707,23 +797,41 @@ def _elevate():
         return True
 
 
+def _maybe_elevate():
+    import os
+    cfg = load_config()
+    if cfg.get("elevate_prompted", False):
+        return
+    cfg["elevate_prompted"] = True
+    save_config(cfg)
+    from tkinter import messagebox
+    from tkinter import Tk
+    root = Tk()
+    root.withdraw()
+    want = messagebox.askyesno(
+        "TurboBee VPN",
+        "VPN уже работает без прав администратора (системный прокси).\n"
+        "Для режима TUN (весь трафик перехватывается автоматически) можно "
+        "запустить приложение от имени администратора.\n\n"
+        "Перезапустить с правами администратора?",
+    )
+    root.destroy()
+    if want:
+        _elevate()
+
+
 def main():
     if not _is_single_instance():
         return
     if not _is_admin():
-        from tkinter import messagebox
-        from tkinter import Tk
-        root = Tk()
-        root.withdraw()
-        want = messagebox.askyesno(
-            "TurboBee VPN — права администратора",
-            "Для работы VPN нужно открыть приложение от имени администратора.\n\n"
-            "Перезапустить сейчас с правами администратора?",
-        )
-        root.destroy()
-        if want:
-            if not _elevate():
-                return
+        import sys
+        if getattr(sys, "frozen", False):
+            # Можно работать и без прав (прокси-режим). Перезапуск от имени
+            # администратора даёт TUN-режим. Предлагаем один раз.
+            try:
+                _maybe_elevate()
+            except Exception:
+                pass
     root = tk.Tk()
     app = TurboBeeApp(root)
     root.mainloop()
