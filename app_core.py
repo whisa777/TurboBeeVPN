@@ -83,7 +83,8 @@ def parse_vless(uri):
 
 def load_config():
     ensure_config_dir()
-    default = {"profiles": [], "current": 0, "bypass_ru": True, "language": "ru", "theme": "dark"}
+    default = {"profiles": [], "current": 0, "bypass_ru": True, "language": "ru", "theme": "dark",
+               "total_stats": {}}
     if not os.path.exists(CONFIG_FILE):
         return default
     try:
@@ -100,6 +101,34 @@ def save_config(cfg):
     ensure_config_dir()
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def profile_key(p):
+    """Стабильный ключ профиля для статистики (uuid+host+port)."""
+    return "%s|%s|%s" % (p.get("uuid", ""), p.get("host", ""), p.get("port", 0))
+
+
+def get_profile_total(cfg, p):
+    """Возвращает (down, up) накопленных байт для профиля."""
+    total_stats = cfg.get("total_stats") or {}
+    k = profile_key(p)
+    stats = total_stats.get(k) or {}
+    return stats.get("down", 0), stats.get("up", 0)
+
+
+def add_profile_total(cfg, p, down, up):
+    """Добавляет байты к суммарной статистике профиля и возвращает новые (down, up)."""
+    if down <= 0 and up <= 0:
+        return get_profile_total(cfg, p)
+    total_stats = cfg.get("total_stats") or {}
+    k = profile_key(p)
+    stats = total_stats.get(k) or {"down": 0, "up": 0}
+    stats["down"] = int(stats.get("down", 0)) + int(down)
+    stats["up"] = int(stats.get("up", 0)) + int(up)
+    total_stats[k] = stats
+    cfg["total_stats"] = total_stats
+    save_config(cfg)
+    return stats["down"], stats["up"]
 
 
 HWID_FILE = os.path.join(CONFIG_DIR, "hwid.txt")
@@ -428,8 +457,8 @@ class TunTrafficMonitor:
 
     def __init__(self, iface_name=TUN_IFACE_NAME):
         self.iface_name = iface_name
-        self.prev_up = 0
-        self.prev_down = 0
+        self.prev_up = None
+        self.prev_down = None
         self.prev_ts = None
 
     def _if_table(self):
@@ -508,23 +537,33 @@ class TunTrafficMonitor:
 
     def sample(self):
         """Возвращает (up_total, down_total, up_bps, down_bps) за последний интервал.
-        up_total/down_total — cumulative байты за сессию; bps — текущая скорость."""
+        up_total/down_total — cumulative байты за сессию; bps — текущая скорость.
+        Возвращает None, если TUN-адаптер сейчас отсутствует (VPN выключен)."""
         try:
             table = self._if_table()
         except Exception:
             return None
-        for iface in table:
-            if iface["name"].lower() == self.iface_name.lower():
-                up, down = iface["up"], iface["down"]
-                up_bps = down_bps = 0.0
-                if self.prev_ts is not None:
-                    dt = time.time() - self.prev_ts
-                    if dt > 0:
-                        up_bps = max(0, up - self.prev_up) / dt
-                        down_bps = max(0, down - self.prev_down) / dt
-                self.prev_up, self.prev_down, self.prev_ts = up, down, time.time()
-                return up, down, up_bps, down_bps
-        return None
+        iface = None
+        for i in table:
+            if i["name"].lower() == self.iface_name.lower():
+                iface = i
+                break
+        if iface is None:
+            # Адаптер исчез (отключились) — сбрасываем базу, чтобы при следующем
+            # подключении скорость считалась от нуля, а не "проскакивала" от старой.
+            self.prev_up = None
+            self.prev_down = None
+            self.prev_ts = None
+            return None
+        up, down = iface["up"], iface["down"]
+        up_bps = down_bps = 0.0
+        if self.prev_ts is not None:
+            dt = time.time() - self.prev_ts
+            if dt > 0 and self.prev_up is not None and self.prev_down is not None:
+                up_bps = max(0, up - self.prev_up) / dt
+                down_bps = max(0, down - self.prev_down) / dt
+        self.prev_up, self.prev_down, self.prev_ts = up, down, time.time()
+        return up, down, up_bps, down_bps
 
 
 def format_rate(bps):

@@ -10,7 +10,8 @@
 |---|---|---|
 | **Android** | [TurboBeeVPN.apk](https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.apk) — 20 МБ | Android 7.0+, ARM64 |
 | **Android (универсальная)** | [TurboBeeVPN-universal.apk](https://github.com/whisa777/TurboBeeVPN/releases/download/latest-build/TurboBeeVPN-universal.apk) — 57 МБ | Android 7.0+, любая архитектура |
-| **Windows** | [TurboBeeVPN.exe](https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.exe) — 28 МБ | Windows 10/11 x64, права администратора |
+| **Windows (портативная)** | [TurboBeeVPN.exe](https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.exe) — 60 МБ | Windows 10/11 x64, права администратора |
+| **Windows (установщик)** | [TurboBeeVPN-Setup.exe](https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN-Setup.exe) — 63 МБ | Windows 10/11 x64, права администратора |
 
 ## Возможности
 
@@ -34,8 +35,17 @@
 
 ### Windows
 
+**Установщик (рекомендуется):**
+
+1. Скачайте `TurboBeeVPN-Setup.exe`
+2. Запустите установщик — создаст ярлык на рабочем столе и в меню «Пуск», а также деинсталлятор
+3. Добавьте ключ или подписку через «+ Добавить ключ»
+4. Нажмите кнопку подключения
+
+**Портативная версия:**
+
 1. Скачайте `TurboBeeVPN.exe`
-2. Запустите от имени администратора (для TUN-туннеля нужны права администратора)
+2. Запустите от имени администратора (для TUN-туннеля нужны права администратора), либо согласитесь на перезапуск с правами администратора
 3. Добавьте ключ или подписку через «+ Добавить ключ»
 4. Нажмите кнопку подключения
 

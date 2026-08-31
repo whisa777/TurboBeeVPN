@@ -1,27 +1,34 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
+import os
+import sys
 import threading
-import webbrowser
+
+from PySide6.QtCore import Qt, QTimer, QPoint, Signal, QObject
+from PySide6.QtGui import QFont, QIcon, QPixmap, QColor, QPainter, QBrush, QPen, QLinearGradient
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QFrame, QScrollArea, QLineEdit, QCheckBox, QRadioButton,
+    QButtonGroup, QDialog, QMessageBox, QSizePolicy,
+)
 
 from app_core import (
     Profile, parse_vless, load_config, save_config, build_singbox_config,
     VpnEngine, SystemProxy, SOCKS_PORT, TunTrafficMonitor, format_rate, format_bytes,
-    fetch_subscription,
+    fetch_subscription, get_profile_total, add_profile_total,
 )
 
 LANG = {
     "ru": {
         "app_title": "TurboBee VPN",
         "status_off": "Отключено",
+        "status_connecting": "Подключение…",
         "status_on": "Подключено",
-        "status_connecting": "Подключение...",
         "status_failed": "Ошибка подключения",
         "current_key": "Текущий ключ",
         "no_key": "Нет ключа",
         "tap_to_connect": "Нажмите, чтобы подключиться",
         "tap_to_disconnect": "Нажмите, чтобы отключиться",
         "my_keys": "Мои ключи",
-        "no_keys": "Нет ключей. Добавьте через «Добавить ключ».",
+        "no_keys": "Нет ключей. Добавьте через «+ Добавить ключ».",
         "server_name_prefix": "Сервер",
         "add_key": "Добавить ключ",
         "settings": "Настройки",
@@ -48,22 +55,24 @@ LANG = {
         "traffic_down": "↓",
         "traffic_up": "↑",
         "traffic_total": "За сессию: ↓ %s · ↑ %s",
-        "sub_loading": "Загружаю подписку...",
+        "traffic_all": "Всего по ключу: ↓ %s · ↑ %s",
+        "traffic_all_none": "Всего по ключу: ↓ 0 · ↑ 0",
+        "sub_loading": "Загружаю подписку…",
         "sub_added": "Подписка добавлена: новых серверов — %d",
         "sub_error": "Ошибка подписки",
     },
     "en": {
         "app_title": "TurboBee VPN",
         "status_off": "Disconnected",
+        "status_connecting": "Connecting…",
         "status_on": "Connected",
-        "status_connecting": "Connecting...",
         "status_failed": "Connection failed",
         "current_key": "Current key",
         "no_key": "No key",
         "tap_to_connect": "Tap to connect",
         "tap_to_disconnect": "Tap to disconnect",
         "my_keys": "My keys",
-        "no_keys": "No keys. Add one via «Add key».",
+        "no_keys": "No keys. Add one via «+ Add key».",
         "server_name_prefix": "Server",
         "add_key": "Add key",
         "settings": "Settings",
@@ -90,395 +99,554 @@ LANG = {
         "traffic_down": "↓",
         "traffic_up": "↑",
         "traffic_total": "Session: ↓ %s · ↑ %s",
-        "sub_loading": "Loading subscription...",
+        "traffic_all": "Total by key: ↓ %s · ↑ %s",
+        "traffic_all_none": "Total by key: ↓ 0 · ↑ 0",
+        "sub_loading": "Loading subscription…",
         "sub_added": "Subscription added: %d new servers",
         "sub_error": "Subscription error",
     },
 }
 
+# Тёплая палитра TurboBee (тёмная и светлая)
+DARK = {
+    "bg": "#1B1B22",
+    "surface": "#26262F",
+    "card": "#2E2E3A",
+    "border": "#3A3A48",
+    "text": "#F4F1E8",
+    "text_secondary": "#9A97A6",
+    "primary": "#F0A93C",   # мёдовый
+    "primary_text": "#17130A",
+    "accent": "#C8811F",
+    "hover": "#E09734",
+    "green": "#4CAF50",
+}
+
 LIGHT = {
-    "bg": "#FDF9F0",
+    "bg": "#FAF6EE",
     "surface": "#FFFFFF",
-    "card": "#F5F1E8",
-    "text": "#2B2B2B",
-    "text_secondary": "#6B6B6B",
+    "card": "#F4EFE4",
+    "border": "#E3DCCB",
+    "text": "#24242B",
+    "text_secondary": "#77727F",
     "primary": "#E6A23C",
     "primary_text": "#FFFFFF",
     "accent": "#C87F1C",
-    "border": "#E8E2D5",
-    "badge_bg": "#F0E6CF",
-    "badge_text": "#7A5410",
-    "hover": "#EAE3D2",
-}
-
-DARK = {
-    "bg": "#121212",
-    "surface": "#1E1E1E",
-    "card": "#262626",
-    "text": "#F5F5F5",
-    "text_secondary": "#A8A8A8",
-    "primary": "#E8B55E",
-    "primary_text": "#1A1507",
-    "accent": "#C87F1C",
-    "border": "#3F3F46",
-    "badge_bg": "#2A2416",
-    "badge_text": "#E6B86A",
-    "hover": "#2C2C2C",
+    "hover": "#D8912C",
+    "green": "#3DA84C",
 }
 
 
-class RoundedFrame(tk.Canvas):
-    def __init__(self, master, radius=14, fill="", outline="", **kw):
-        self._radius = radius
-        self._fill = fill
-        self._outline = outline
-        self._inner = None
-        kw.setdefault("height", 1)
-        super().__init__(master, highlightthickness=0, bd=0, bg=master.cget("bg"), **kw)
-        self.bind("<Configure>", self._draw)
-        self._inner = tk.Frame(self, bg=fill)
-        self._win = self.create_window(0, 0, window=self._inner, anchor="nw")
-        self.after(50, self._sync_height)
+def _is_admin():
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
 
-    def _sync_height(self, event=None):
-        reqh = self._inner.winfo_reqheight()
-        if reqh and reqh != self.winfo_height():
+
+_SINGLE_MUTEX_HANDLE = None
+
+
+def _is_single_instance():
+    global _SINGLE_MUTEX_HANDLE
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        handle = kernel32.CreateMutexW(None, False, "Local\\TurboBeeVPN_SingleInstance")
+        if not handle:
+            return True
+        if ctypes.get_last_error() == 183:
+            kernel32.CloseHandle(handle)
+            hwnd = user32.FindWindowW(None, "TurboBee VPN")
+            from PySide6.QtWidgets import qApp
+            if hwnd:
+                user32.ShowWindow(wintypes.HWND(hwnd), 9)
+                user32.SetForegroundWindow(wintypes.HWND(hwnd))
+            else:
+                wins = qApp.topLevelWidgets()
+                for w in wins:
+                    if isinstance(w, QMainWindow):
+                        w.showNormal(); w.raise_(); w.activateWindow()
+            return False
+        _SINGLE_MUTEX_HANDLE = handle
+        return True
+    except Exception:
+        return True
+
+
+def _elevate():
+    try:
+        if not getattr(sys, "frozen", False):
+            return False
+        global _SINGLE_MUTEX_HANDLE
+        if _SINGLE_MUTEX_HANDLE:
             try:
-                self.configure(height=reqh)
+                import ctypes
+                ctypes.windll.kernel32.CloseHandle(_SINGLE_MUTEX_HANDLE)
             except Exception:
                 pass
-
-    def _rounded_points(self, w, h, r):
-        return [
-            r, 0,  w - r, 0,  w, 0,  w, r,
-            w, h - r,  w, h,  w - r, h,  r, h,
-            0, h,  0, h - r,  0, r,  0, 0,
-        ]
-
-    def _draw(self, event=None):
-        try:
-            reqh = self._inner.winfo_reqheight()
-            if reqh > 2 and reqh != self.winfo_height():
-                self.configure(height=reqh)
-        except Exception:
-            pass
-        self.delete("shape")
-        w = self.winfo_width()
-        h = self.winfo_height()
-        if w <= 2 or h <= 2:
-            return
-        r = min(self._radius, w // 2, h // 2)
-        self.create_polygon(self._rounded_points(w, h, r), smooth=True,
-                            fill=self._fill, outline=self._outline, tags=("shape",))
-        self.tag_lower("shape")
-        self.coords(self._win, 0, 0)
-        self.itemconfigure(self._win, width=w, height=h)
-
-    def inner(self):
-        return self._inner
-
-    def set_bg(self, color):
-        self._fill = color
-        self._inner.configure(bg=color)
-        self._draw()
-
-    def get_bg(self):
-        return self._fill
+            _SINGLE_MUTEX_HANDLE = None
+        import ctypes
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, "", None, 1)
+        return True
+    except Exception:
+        return False
 
 
-class TurboBeeApp:
-    def __init__(self, root):
-        self.root = root
+def _maybe_elevate():
+    """Спрашивает пользователя о подъёме прав. Вызывать ПОСЛЕ создания QApplication.
+    Возвращает True, если приложение нужно завершить (запущен elevated процесс)."""
+    msg = (
+        "TurboBee VPN запущен без прав администратора.\n"
+        "В этом режиме VPN не сможет перехватывать весь трафик (режим TUN), "
+        "и может не работать.\n\n"
+        "Перезапустить от имени администратора?"
+    )
+    box = QMessageBox(QMessageBox.Question, "TurboBee VPN", msg)
+    btn_yes = box.addButton("Да", QMessageBox.YesRole)
+    box.addButton("Нет", QMessageBox.NoRole)
+    box.setDefaultButton(btn_yes)
+    box.exec()
+    if box.clickedButton() is btn_yes:
+        return _elevate()
+    return False
+
+def load_logo():
+    """Ищет логотип рядом с exe/скриптом."""
+    if getattr(sys, "_MEIPASS", None):
+        p = os.path.join(sys._MEIPASS, "Logo.jpg")
+        if os.path.exists(p):
+            return p
+    base = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
+    for name in ("Logo.jpg", "logo.jpg", "Logo.png", "logo.png", "app.ico"):
+        p = os.path.join(base, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+class RoundButton(QPushButton):
+    """Современная кнопка с рамкой."""
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.bg = "#F0A93C"
+        self.fg = "#17130A"
+        self.hover_bg = "#E09734"
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(44)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def set_colors(self, bg, fg, hover):
+        self.bg = bg
+        self.fg = fg
+        self.hover_bg = hover
+        self.update()
+
+    def enterEvent(self, e):
+        self.setStyleSheet(self._css(self.hover_bg))
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self.setStyleSheet(self._css(self.bg))
+        super().leaveEvent(e)
+
+    def _css(self, bg):
+        return f"""
+        QPushButton {{
+            background-color: {bg};
+            color: {self.fg};
+            border: none;
+            border-radius: 22px;
+            font-size: 15px;
+            font-weight: 600;
+            padding: 10px 20px;
+        }}
+        QPushButton:disabled {{
+            background-color: #555; color: #bbb;
+        }}
+        """
+
+    def showEvent(self, e):
+        self.setStyleSheet(self._css(self.bg))
+        super().showEvent(e)
+
+
+class StatusDot(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.connected = False
+        self.color = "#F0A93C"
+        self.setFixedSize(96, 96)
+
+    def set_state(self, connected, color):
+        self.connected = connected
+        self.color = color
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = self.rect()
+        cx, cy = r.center().x(), r.center().y()
+        # внешнее кольцо
+        p.setBrush(QColor("#3A3A48" if not self.connected else "#2A2A33"))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QPoint(cx, cy), 44, 44)
+        c = self.color
+        p.setBrush(QColor(c))
+        p.drawEllipse(QPoint(cx, cy), 36, 36)
+        # внутренняя точка
+        p.setBrush(QColor("#1B1B22" if not self.connected else c))
+        p.drawEllipse(QPoint(cx, cy), 20, 20)
+        # символ
+        p.setPen(QPen(QColor("#FFFFFF" if self.connected else "#1B1B22"), 3, Qt.SolidLine, Qt.RoundCap))
+        f = QFont("Segoe UI Symbol", 22, QFont.Bold)
+        p.setFont(f)
+        glyph = "\u2714" if self.connected else "\u23FB"
+        p.drawText(r, Qt.AlignCenter, glyph)
+
+
+class KeyRow(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
+        self.marker = QLabel("○")
+        self.marker.setFixedWidth(18)
+        self.marker.setAlignment(Qt.AlignCenter)
+        self.name = QLabel("")
+        self.name.setStyleSheet("font-size: 14px;")
+        self.del_btn = QLabel("✕")
+        self.del_btn.setCursor(Qt.PointingHandCursor)
+        self.del_btn.setStyleSheet("color: #C8811F; font-size: 14px;")
+        layout.addWidget(self.marker)
+        layout.addWidget(self.name, 1)
+        layout.addWidget(self.del_btn)
+
+
+class MyScrollArea(QScrollArea):
+    pass
+
+
+class TurboBeeWindow(QMainWindow):
+    sig_refresh = Signal()
+    sig_error = Signal(str)
+    sig_sub_done = Signal(object, object)
+
+    def __init__(self):
+        super().__init__()
         self.cfg = load_config()
+        self.cfg.setdefault("total_stats", {})
         self.engine = VpnEngine()
         self.engine.add_log_listener(self._on_engine_log)
         self.traffic = TunTrafficMonitor()
         self.connected = False
         self.proxy_mode = False
+        self.session_down = 0
+        self.session_up = 0
+        self._last_sample = None
         self._build_ui()
         self.apply_theme()
         self.apply_language()
         self.refresh_profiles()
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-        self._poll_traffic_loop()
+        self._update_status_ui()
+        self._refresh_total_label()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._on_tick)
+        self._timer.start(1000)
+        self.sig_refresh.connect(self._on_sig_refresh)
+        self.sig_error.connect(self._on_sig_error)
+        self.sig_sub_done.connect(self._on_sig_sub_done)
 
+    # ---------- helpers ----------
     def tr(self, key):
         return LANG.get(self.cfg.get("language", "ru"), LANG["ru"]).get(key, key)
 
     def colors(self):
         return DARK if self.cfg.get("theme", "dark") == "dark" else LIGHT
 
-    def _apply_titlebar(self, c):
-        try:
-            import ctypes
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            if not hwnd:
-                hwnd = self.root.winfo_id()
-            dark = 1 if c is DARK else 0
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(dark)), ctypes.sizeof(ctypes.c_int))
-        except Exception:
-            pass
+    def _current_profile(self):
+        profiles = self.cfg.get("profiles", [])
+        idx = self.cfg.get("current", 0)
+        if 0 <= idx < len(profiles):
+            return profiles[idx]
+        return None
 
+    # ---------- UI ----------
     def _build_ui(self):
-        self.root.title("TurboBee VPN")
-        self.root.geometry("420x640")
-        self.root.minsize(380, 560)
-        self.bg = tk.Frame(self.root)
-        self.bg.pack(fill="both", expand=True)
+        self.setWindowTitle("TurboBee VPN")
+        self.setFixedSize(420, 640)
+        self.setMinimumSize(380, 560)
+        self.setWindowIcon(QIcon(load_logo() or ""))
 
-        self.header = tk.Frame(self.bg)
-        self.header.pack(fill="x", pady=(14, 6))
-        self.title_lbl = tk.Label(self.header, text="TurboBee VPN", font=("Segoe UI", 18, "bold"))
-        self.title_lbl.pack(side="left", padx=18)
-        self.settings_btn = tk.Button(self.header, text="⚙", font=("Segoe UI", 16), relief="flat",
-                                      cursor="hand2", command=self.open_settings)
-        self.settings_btn.pack(side="right", padx=14)
+        self.central = QWidget()
+        self.central_layout = QVBoxLayout(self.central)
+        self.central_layout.setContentsMargins(16, 14, 16, 12)
+        self.central_layout.setSpacing(10)
+        self.setCentralWidget(self.central)
 
-        self.sep = tk.Frame(self.bg, height=1)
-        self.sep.pack(fill="x", padx=16)
+        # Шапка: лого + название + настройки
+        self.header = QHBoxLayout()
+        self.header.setSpacing(10)
+        logo_path = load_logo()
+        self.logo_lbl = QLabel()
+        pix = QPixmap(logo_path) if logo_path else QPixmap()
+        if not pix.isNull():
+            self.logo_lbl.setPixmap(pix.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.logo_lbl.setFixedSize(40, 40)
+        self.title_lbl = QLabel("TurboBee VPN")
+        self.title_lbl.setStyleSheet("font-size: 19px; font-weight: 700;")
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setFixedSize(36, 36)
+        self.settings_btn.setCursor(Qt.PointingHandCursor)
+        self.settings_btn.setStyleSheet("QPushButton{border:none; font-size:20px;}")
+        self.settings_btn.clicked.connect(self.open_settings)
+        self.header.addWidget(self.logo_lbl)
+        self.header.addWidget(self.title_lbl, 1)
+        self.header.addWidget(self.settings_btn)
+        self.central_layout.addLayout(self.header)
 
-        self.status_card = RoundedFrame(self.bg, radius=16, fill=self.colors()["surface"])
-        self.status_card.pack(fill="x", padx=16, pady=(16, 6))
-        self.status_card.bind("<Button-1>", lambda e: self.toggle_connect())
-        self.status_dot = tk.Canvas(self.status_card.inner(), width=92, height=92, highlightthickness=0,
-                                    bg=self.colors()["surface"], cursor="hand2")
-        self.status_dot.pack(pady=(18, 6))
-        self.status_lbl = tk.Label(self.status_card.inner(), text="", font=("Segoe UI", 15, "bold"))
-        self.status_lbl.pack(pady=(0, 2))
-        self.status_hint = tk.Label(self.status_card.inner(), text="", font=("Segoe UI", 9))
-        self.status_hint.pack(pady=(0, 8))
+        # Статус-карточка
+        self.status_card = QFrame()
+        self.status_layout = QVBoxLayout(self.status_card)
+        self.status_layout.setContentsMargins(0, 18, 0, 14)
+        self.status_layout.setSpacing(4)
+        self.central_layout.addWidget(self.status_card)
 
-        self.traffic_frame = tk.Frame(self.status_card.inner(), bg=self.colors()["surface"])
-        self.traffic_frame.pack(fill="x", padx=14, pady=(0, 12))
-        self.traffic_up_lbl = tk.Label(self.traffic_frame, text="↑ 0 Б/с", font=("Segoe UI", 10, "bold"),
-                                       bg=self.colors()["surface"])
-        self.traffic_up_lbl.pack(side="left", padx=4)
-        self.traffic_down_lbl = tk.Label(self.traffic_frame, text="↓ 0 Б/с", font=("Segoe UI", 10, "bold"),
-                                         bg=self.colors()["surface"])
-        self.traffic_down_lbl.pack(side="right", padx=4)
-        self.traffic_total_lbl = tk.Label(self.status_card.inner(), text="", font=("Segoe UI", 8),
-                                          bg=self.colors()["surface"])
-        self.traffic_total_lbl.pack(pady=(0, 10))
+        self.status_dot = StatusDot()
+        # клик по карточке переключает подключение
+        self.status_dot.mousePressEvent = lambda e: self.toggle_connect()
+        self.status_layout.addWidget(self.status_dot, alignment=Qt.AlignCenter)
 
-        for w in (self.status_card.inner(), self.status_dot, self.status_lbl, self.status_hint,
-                  self.traffic_frame, self.traffic_up_lbl, self.traffic_down_lbl, self.traffic_total_lbl):
-            w.bind("<Button-1>", lambda e: self.toggle_connect())
-        self._draw_status_dot()
+        self.status_lbl = QLabel("")
+        self.status_lbl.setAlignment(Qt.AlignCenter)
+        self.status_lbl.setStyleSheet("font-size: 17px; font-weight: 700; background: transparent;")
+        self.status_layout.addWidget(self.status_lbl)
 
-        self.keys_title = tk.Frame(self.bg)
-        self.keys_title.pack(fill="x", padx=16, pady=(10, 2))
-        self.keys_title_lbl = tk.Label(self.keys_title, text="", font=("Segoe UI", 12, "bold"), cursor="hand2")
-        self.keys_title_lbl.pack(side="left", padx=4)
-        self.keys_title_lbl.bind("<Button-1>", lambda e: self.toggle_keys_visible())
+        self.status_hint = QLabel("")
+        self.status_hint.setAlignment(Qt.AlignCenter)
+        self.status_hint.setStyleSheet("font-size: 10px; background: transparent;")
+        self.status_layout.addWidget(self.status_hint)
 
-        self.add_btn = RoundedFrame(self.bg, radius=12, fill=self.colors()["primary"], cursor="hand2")
-        self.add_btn.pack(fill="x", padx=16, pady=(6, 12))
-        self.add_btn_lbl = tk.Label(self.add_btn.inner(), text="", font=("Segoe UI", 11, "bold"),
-                                    bg=self.colors()["primary"], fg=self.colors()["primary_text"], cursor="hand2")
-        self.add_btn_lbl.pack(pady=10)
-        self.add_btn.bind("<Button-1>", lambda e: self.open_add_dialog())
-        self.add_btn_lbl.bind("<Button-1>", lambda e: self.open_add_dialog())
-        self.add_btn.bind("<Enter>", lambda e: self._btn_hover(True))
-        self.add_btn.bind("<Leave>", lambda e: self._btn_hover(False))
-        self.add_btn_lbl.bind("<Enter>", lambda e: self._btn_hover(True))
-        self.add_btn_lbl.bind("<Leave>", lambda e: self._btn_hover(False))
+        # скорость
+        self.traffic_row = QHBoxLayout()
+        self.traffic_up_lbl = QLabel("↑ 0 Б/с")
+        self.traffic_down_lbl = QLabel("↓ 0 Б/с")
+        self.traffic_up_lbl.setStyleSheet("font-weight:700; font-size:12px; background: transparent;")
+        self.traffic_down_lbl.setStyleSheet("font-weight:700; font-size:12px; background: transparent;")
+        self.traffic_row.addWidget(self.traffic_up_lbl)
+        self.traffic_row.addStretch(1)
+        self.traffic_row.addWidget(self.traffic_down_lbl)
+        self.status_layout.addLayout(self.traffic_row)
 
-        self.proxy_lbl = tk.Label(self.bg, text="", font=("Segoe UI", 8))
-        self.proxy_lbl.pack(fill="x", padx=16, pady=(0, 8))
+        self.traffic_total_lbl = QLabel("")
+        self.traffic_total_lbl.setAlignment(Qt.AlignCenter)
+        self.traffic_total_lbl.setStyleSheet("font-size:11px; background: transparent;")
+        self.status_layout.addWidget(self.traffic_total_lbl)
+        self.traffic_all_lbl = QLabel("")
+        self.traffic_all_lbl.setAlignment(Qt.AlignCenter)
+        self.traffic_all_lbl.setStyleSheet("font-size:11px; background: transparent;")
+        self.status_layout.addWidget(self.traffic_all_lbl)
 
-        self.keys_frame = tk.Frame(self.bg)
-        self.keys_frame.pack(fill="both", expand=True, padx=16, pady=(0, 4))
-        self.keys_canvas = tk.Canvas(self.keys_frame, highlightthickness=0)
-        self.keys_scroll = ttk.Scrollbar(self.keys_frame, orient="vertical", command=self.keys_canvas.yview)
-        self.keys_inner = tk.Frame(self.keys_canvas)
-        self.keys_inner.bind("<Configure>", lambda e: self.keys_canvas.configure(scrollregion=self.keys_canvas.bbox("all")))
-        self.keys_canvas.create_window((0, 0), window=self.keys_inner, anchor="nw")
-        self.keys_canvas.configure(yscrollcommand=self.keys_scroll.set)
-        self.keys_canvas.pack(side="left", fill="both", expand=True)
-        self.keys_scroll.pack(side="right", fill="y")
+        # Подпись header for keys
+        self.keys_title_row = QHBoxLayout()
+        self.keys_title_lbl = QLabel("")
+        self.keys_title_lbl.setCursor(Qt.PointingHandCursor)
+        self.keys_title_lbl.setStyleSheet("font-size:14px; font-weight:700;")
+        self.keys_title_lbl.mousePressEvent = lambda e: self.toggle_keys_visible()
+        self.keys_title_row.addWidget(self.keys_title_lbl)
+        self.keys_title_row.addStretch(1)
+        self.central_layout.addLayout(self.keys_title_row)
 
-        def _on_wheel(e):
-            self.keys_canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+        # Кнопка добавить
+        self.add_btn = RoundButton()
+        self.add_btn.clicked.connect(self.open_add_dialog)
+        self.central_layout.addWidget(self.add_btn)
 
-        self.keys_canvas.bind("<MouseWheel>", _on_wheel)
-        self.keys_inner.bind("<MouseWheel>", _on_wheel)
-        self.keys_frame.bind("<MouseWheel>", _on_wheel)
+        self.proxy_lbl = QLabel("")
+        self.proxy_lbl.setStyleSheet("font-size:9px; color:#9A97A6;")
+        self.proxy_lbl.setAlignment(Qt.AlignCenter)
+        self.central_layout.addWidget(self.proxy_lbl)
 
-    def _btn_hover(self, on):
-        c = self.colors()
-        fill = c["accent"] if on else c["primary"]
-        try:
-            self.add_btn.set_bg(fill)
-            self.add_btn_lbl.configure(bg=fill)
-        except Exception:
-            pass
+        # Список ключей в scroll
+        self.keys_scroll = MyScrollArea()
+        self.keys_scroll.setWidgetResizable(True)
+        self.keys_scroll.setFrameShape(QFrame.NoFrame)
+        self.keys_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.keys_container = QWidget()
+        self.keys_container_layout = QVBoxLayout(self.keys_container)
+        self.keys_container_layout.setContentsMargins(0, 0, 4, 0)
+        self.keys_container_layout.setSpacing(6)
+        self.keys_container_layout.addStretch(1)
+        self.keys_scroll.setWidget(self.keys_container)
+        self.central_layout.addWidget(self.keys_scroll, 1)
+        self.keys_visible = True
 
     def apply_theme(self):
         c = self.colors()
-        self.root.configure(bg=c["bg"])
-        self._apply_titlebar(c)
-        for w in (self.bg,):
-            w.configure(bg=c["bg"])
-        self.header.configure(bg=c["bg"])
-        self.sep.configure(bg=c["border"])
-        self.keys_title.configure(bg=c["bg"])
-        self.title_lbl.configure(bg=c["bg"], fg=c["text"])
-        self.settings_btn.configure(bg=c["bg"], fg=c["primary"], activebackground=c["hover"], activeforeground=c["primary"])
-        self.status_card.set_bg(c["surface"])
-        self.status_dot.configure(bg=c["surface"])
-        self.status_lbl.configure(bg=c["surface"], fg=c["text"])
-        self.status_hint.configure(bg=c["surface"], fg=c["text_secondary"])
-        self.traffic_frame.configure(bg=c["surface"])
-        for w in (self.traffic_up_lbl, self.traffic_down_lbl):
-            w.configure(bg=c["surface"], fg=c["primary"])
-        self.traffic_total_lbl.configure(bg=c["surface"], fg=c["text_secondary"])
+        self.central.setStyleSheet(f"""
+            QWidget {{ background-color: {c['bg']}; color: {c['text']}; }}
+            QFrame#statusCard {{ background: {c['surface']}; border-radius: 18px; }}
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{ background: {c['bg']}; width: 8px; }}
+            QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 4px; min-height: 30px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+            QPushButton {{ }}
+        """)
+        self.status_card.setObjectName("statusCard")
+        self.status_card.setStyleSheet(f"#statusCard {{ background: {c['surface']}; border-radius: 18px; }}")
+        self.status_lbl.setStyleSheet(f"font-size:17px; font-weight:700; color:{c['text']}; background: transparent;")
+        self.status_hint.setStyleSheet(f"font-size:10px; color:{c['text_secondary']}; background: transparent;")
+        self.traffic_up_lbl.setStyleSheet(f"font-weight:700; font-size:12px; color:{c['primary']}; background: transparent;")
+        self.traffic_down_lbl.setStyleSheet(f"font-weight:700; font-size:12px; color:{c['primary']}; background: transparent;")
+        self.traffic_total_lbl.setStyleSheet(f"font-size:11px; color:{c['text_secondary']}; background: transparent;")
+        self.traffic_all_lbl.setStyleSheet(f"font-size:11px; color:{c['text_secondary']}; background: transparent;")
+        self.keys_title_lbl.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
+        self.title_lbl.setStyleSheet(f"font-size:19px; font-weight:700; color:{c['text']};")
+        self.settings_btn.setStyleSheet(f"QPushButton{{border:none; font-size:20px; color:{c['text']};}} QPushButton:hover{{color:{c['primary']};}}")
+        self.proxy_lbl.setStyleSheet(f"font-size:9px; color:{c['text_secondary']};")
+        self.add_btn.set_colors(c["primary"], c["primary_text"], c["hover"])
+        self.keys_title_lbl.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
+        # обновить строки ключей
+        for i in range(self.keys_container_layout.count()):
+            item = self.keys_container_layout.itemAt(i)
+            w = item.widget()
+            if isinstance(w, KeyRow):
+                self._theme_key_row(w, c)
+            elif isinstance(w, QLabel) and w.text().startswith("—"):
+                w.setStyleSheet(f"font-size:11px; color:{c['text_secondary']}; padding:10px;")
         self._draw_status_dot()
-        self.add_btn.set_bg(c["primary"])
-        self.add_btn_lbl.configure(bg=c["primary"], fg=c["primary_text"])
-        self.keys_title_lbl.configure(bg=c["bg"], fg=c["text"])
-        self.keys_frame.configure(bg=c["bg"])
-        self.keys_canvas.configure(bg=c["bg"])
-        self.keys_inner.configure(bg=c["bg"])
-        self.proxy_lbl.configure(bg=c["bg"], fg=c["text_secondary"])
-        for child in self.keys_inner.winfo_children():
-            self._theme_key_row(child)
-        self._style_scrollbar()
 
-    def _style_scrollbar(self):
-        c = self.colors()
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TScrollbar", background=c["surface"], troughcolor=c["bg"],
-                        bordercolor=c["bg"], arrowcolor=c["text_secondary"])
+    def _theme_key_row(self, row, c):
+        row.setStyleSheet(f"QFrame {{ background: {c['card']}; border-radius: 12px; }}")
+        row.marker.setStyleSheet(f"font-size:13px; color:{c['primary']};")
+        row.name.setStyleSheet(f"font-size:14px; color:{c['text']};")
 
     def apply_language(self):
         t = self.tr
-        self.root.title(t("app_title"))
-        self.title_lbl.configure(text=t("app_title"))
-        self.settings_btn.configure(text="⚙")
-        self.add_btn_lbl.configure(text=t("add_key_btn"))
+        self.setWindowTitle(t("app_title"))
+        self.title_lbl.setText(t("app_title"))
+        self.add_btn.setText(t("add_key_btn"))
+        self.keys_title_lbl.setText("%s (%d)" % (t("my_keys"), len(self.cfg.get("profiles", []))))
         self._update_status_ui()
-        self.keys_title_lbl.configure(text="%s (%d)" % (t("my_keys"), len(self.cfg.get("profiles", []))))
-        for child in self.keys_inner.winfo_children():
-            child.destroy()
         self.refresh_profiles()
         self.refresh_proxy_label()
 
     def _update_status_ui(self):
         t = self.tr
         if self.connected:
-            self.status_lbl.configure(text=t("status_on"))
-            self.status_hint.configure(text=t("tap_to_disconnect"))
+            self.status_lbl.setText(t("status_on"))
+            self.status_hint.setText(t("tap_to_disconnect"))
         else:
-            self.status_lbl.configure(text=t("status_off"))
-            self.status_hint.configure(text=t("tap_to_connect"))
+            self.status_lbl.setText(t("status_off"))
+            self.status_hint.setText(t("tap_to_connect"))
         self._draw_status_dot()
 
     def _draw_status_dot(self):
-        try:
-            c = self.colors()
-            cv = self.status_dot
-            cv.delete("all")
-            bg = c["surface"]
-            fill = "#4CAF50" if self.connected else c["primary"]
-            ring = c["border"]
-            cv.configure(bg=bg)
-            cv.create_oval(8, 8, 84, 84, fill=ring, outline="")
-            cv.create_oval(14, 14, 78, 78, fill=fill, outline="")
-            cv.create_oval(26, 26, 66, 66, fill=fill, outline=fill)
-            label = "✔" if self.connected else "⏻"
-            cv.create_text(46, 46, text=label, fill="#1A1507" if not self.connected else "#FFFFFF",
-                           font=("Segoe UI", 30, "bold"))
-        except Exception:
-            pass
+        c = self.colors()
+        self.status_dot.set_state(self.connected, c["green"] if self.connected else c["primary"])
 
-    def _poll_traffic_loop(self):
+    # ---------- traffic ----------
+    def _on_tick(self):
         if self.connected:
             self._update_traffic_ui()
-        self.root.after(1000, self._poll_traffic_loop)
+        elif self._last_sample is not None:
+            # после отключения — обновить суммарную строку и сбросить
+            self._last_sample = None
+            self._refresh_total_label()
 
     def _update_traffic_ui(self):
         try:
             t = self.tr
             sample = self.traffic.sample()
             if not sample:
-                self.traffic_up_lbl.configure(text="↑ --")
-                self.traffic_down_lbl.configure(text="↓ --")
-                self.traffic_total_lbl.configure(text=t("traffic_total") % ("--", "--"))
+                self.traffic_up_lbl.setText("↑ --")
+                self.traffic_down_lbl.setText("↓ --")
+                self.traffic_total_lbl.setText(t("traffic_total") % ("--", "--"))
+                self._refresh_total_label()
                 return
             up_total, down_total, up_bps, down_bps = sample
-            self.traffic_up_lbl.configure(text="↑ " + format_rate(up_bps))
-            self.traffic_down_lbl.configure(text="↓ " + format_rate(down_bps))
-            self.traffic_total_lbl.configure(
-                text=t("traffic_total") % (format_bytes(down_total), format_bytes(up_total)))
+            self.traffic_up_lbl.setText("↑ " + format_rate(up_bps))
+            self.traffic_down_lbl.setText("↓ " + format_rate(down_bps))
+            self.traffic_total_lbl.setText(t("traffic_total") % (format_bytes(down_total), format_bytes(up_total)))
+            if self.connected and self._last_sample is not None:
+                l_up, l_down = self._last_sample
+                self.session_down += max(0, down_total - l_down)
+                self.session_up += max(0, up_total - l_up)
+            self._last_sample = (up_total, down_total)
+            self._refresh_total_label()
         except Exception:
             pass
 
+    def _refresh_total_label(self):
+        try:
+            t = self.tr
+            p = self._current_profile()
+            if not p:
+                self.traffic_all_lbl.setText("")
+                return
+            down0, up0 = get_profile_total(self.cfg, p)
+            self.traffic_all_lbl.setText(t("traffic_all") % (format_bytes(down0 + self.session_down),
+                                                             format_bytes(up0 + self.session_up)))
+        except Exception:
+            self.traffic_all_lbl.setText(self.tr("traffic_all_none"))
+
+    def _commit_session(self):
+        try:
+            p = self._current_profile()
+            if (self.session_down > 0 or self.session_up > 0) and p:
+                add_profile_total(self.cfg, p, self.session_down, self.session_up)
+            self.session_down = 0
+            self.session_up = 0
+            self._last_sample = None
+        except Exception:
+            pass
+
+    # ---------- keys ----------
     def refresh_profiles(self):
         t = self.tr
         profiles = self.cfg.get("profiles", [])
-        self.keys_title_lbl.configure(text="%s (%d)" % (t("my_keys"), len(profiles)))
-        for child in self.keys_inner.winfo_children():
-            child.destroy()
+        self.keys_title_lbl.setText("%s (%d)" % (t("my_keys"), len(profiles)))
+        # очистить (кроме stretch)
+        while self.keys_container_layout.count() > 1:
+            item = self.keys_container_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
         if not profiles:
-            lbl = tk.Label(self.keys_inner, text=t("no_keys"), font=("Segoe UI", 9), wraplength=340, justify="left")
-            lbl.pack(fill="x", padx=8, pady=6)
-            lbl.configure(bg=self.colors()["bg"], fg=self.colors()["text_secondary"])
-            lbl.bind("<MouseWheel>", self._on_key_wheel)
+            empty = QLabel("— " + t("no_keys") + " —")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet("font-size:11px; color:%s; padding:12px;" % self.colors()["text_secondary"])
+            empty.setWordWrap(True)
+            self.keys_container_layout.insertWidget(0, empty)
+            return
+
         for i, p in enumerate(profiles):
-            self._add_key_row(i, p)
-        self.apply_theme()
-
-    def _add_key_row(self, idx, p):
-        c = self.colors()
-        row = RoundedFrame(self.keys_inner, radius=10, fill=c["surface"])
-        row.pack(fill="x", padx=2, pady=3)
-        inner = row.inner()
-        is_current = idx == self.cfg.get("current", 0)
-        marker = "●" if is_current else "○"
-        marker_lbl = tk.Label(inner, text=marker, font=("Segoe UI", 10), width=2)
-        marker_lbl.pack(side="left", padx=(10, 4), pady=8)
-        marker_lbl.configure(bg=c["surface"], fg=c["primary"] if is_current else c["text_secondary"])
-        name_lbl = tk.Label(inner, text=p.get("name", "?"), font=("Segoe UI", 10), anchor="w")
-        name_lbl.pack(side="left", fill="x", expand=True, pady=8)
-        name_lbl.configure(bg=c["surface"], fg=c["text"])
-        for w in (inner, marker_lbl, name_lbl):
-            w.bind("<Button-1>", lambda e, i=idx: self.select_key(i))
-            w.bind("<MouseWheel>", self._on_key_wheel)
-        del_btn = tk.Label(inner, text="✕", font=("Segoe UI", 10), cursor="hand2")
-        del_btn.pack(side="right", padx=12, pady=8)
-        del_btn.configure(bg=c["surface"], fg=c["accent"])
-        del_btn.bind("<Button-1>", lambda e, i=idx: self.delete_key(i))
-        del_btn.bind("<MouseWheel>", self._on_key_wheel)
-
-    def _on_key_wheel(self, e):
-        try:
-            self.keys_canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
-        except Exception:
-            pass
-
-    def _theme_key_row(self, row):
-        c = self.colors()
-        try:
-            if hasattr(row, "set_bg"):
-                row.set_bg(c["surface"])
-                inner = row.inner()
-                for w in inner.winfo_children():
-                    w.configure(bg=c["surface"])
-            else:
-                row.configure(bg=c["surface"])
-                for w in row.winfo_children():
-                    w.configure(bg=c["surface"])
-        except Exception:
-            pass
+            row = KeyRow()
+            is_current = i == self.cfg.get("current", 0)
+            row.marker.setText("●" if is_current else "○")
+            row.name.setText(p.get("name", "?"))
+            row.name.setCursor(Qt.PointingHandCursor)
+            row.marker.setCursor(Qt.PointingHandCursor)
+            row.marker.mousePressEvent = lambda e, idx=i: self.select_key(idx)
+            row.name.mousePressEvent = lambda e, idx=i: self.select_key(idx)
+            row.del_btn.mousePressEvent = lambda e, idx=i: self.delete_key(idx)
+            self._theme_key_row(row, self.colors())
+            self.keys_container_layout.insertWidget(self.keys_container_layout.count() - 1, row)
 
     def toggle_keys_visible(self):
-        if self.keys_frame.winfo_ismapped():
-            self.keys_frame.pack_forget()
-        else:
-            self.keys_frame.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+        self.keys_visible = not self.keys_visible
+        self.keys_scroll.setVisible(self.keys_visible)
 
     def select_key(self, idx):
+        if idx == self.cfg.get("current", 0) and not self.connected:
+            return
         self.cfg["current"] = idx
         save_config(self.cfg)
         self.refresh_profiles()
@@ -488,7 +656,10 @@ class TurboBeeApp:
     def delete_key(self, idx):
         t = self.tr
         profiles = self.cfg.get("profiles", [])
-        if not messagebox.askyesno(t("delete_title"), t("delete_msg") % profiles[idx].get("name", "?")):
+        if not (0 <= idx < len(profiles)):
+            return
+        if QMessageBox.question(self, t("delete_title"), t("delete_msg") % profiles[idx].get("name", "?"),
+                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
         del profiles[idx]
         if self.cfg.get("current", 0) >= len(profiles):
@@ -497,7 +668,9 @@ class TurboBeeApp:
         if self.connected:
             self.reconnect()
         self.refresh_profiles()
+        self._refresh_total_label()
 
+    # ---------- connect ----------
     def toggle_connect(self):
         if self.connected:
             self.disconnect()
@@ -508,14 +681,15 @@ class TurboBeeApp:
         t = self.tr
         profiles = self.cfg.get("profiles", [])
         if not profiles:
-            messagebox.showinfo(t("add_key"), t("no_keys"))
+            QMessageBox.information(self, t("add_key"), t("no_keys"))
             return
         self.connected = False
-        self.status_lbl.configure(text=t("status_connecting"))
+        self.status_lbl.setText(t("status_connecting"))
         threading.Thread(target=self._do_connect, daemon=True).start()
 
     def _do_connect(self):
         self.proxy_mode = False
+        self._last_sample = None
         try:
             profiles = self.cfg.get("profiles", [])
             p = profiles[self.cfg.get("current", 0)]
@@ -531,7 +705,6 @@ class TurboBeeApp:
             if use_tun:
                 ok = self.engine.test_proxy()
                 if not ok:
-                    # TUN не взлетел (напр. драйвер wintun) — откатываемся на прокси-режим
                     self.engine.stop()
                     config = build_singbox_config(profile, bypass_ru, use_tun=False)
                     self.engine.start(config)
@@ -549,17 +722,25 @@ class TurboBeeApp:
         except Exception as e:
             self.engine.stop()
             SystemProxy.set_proxy(False)
-            self._emit_error(str(e))
-        self.root.after(0, self._update_status_ui)
+            self.sig_error.emit(str(e))
+        self.sig_refresh.emit()
         self.refresh_proxy_label()
 
     def disconnect(self):
         self.connected = False
         self.proxy_mode = False
+        self._commit_session()
+        self._clear_traffic_labels()
         self.engine.stop()
         SystemProxy.set_proxy(False)
         self._update_status_ui()
         self.refresh_proxy_label()
+        self._refresh_total_label()
+
+    def _clear_traffic_labels(self):
+        self.traffic_up_lbl.setText("↑ 0 Б/с")
+        self.traffic_down_lbl.setText("↓ 0 Б/с")
+        self.traffic_total_lbl.setText(self.tr("traffic_total") % ("0 Б", "0 Б"))
 
     def reconnect(self):
         self.disconnect()
@@ -568,105 +749,112 @@ class TurboBeeApp:
     def refresh_proxy_label(self):
         t = self.tr
         if self.connected:
-            if self.proxy_mode:
-                self.proxy_lbl.configure(text=t("proxy_set"))
-            else:
-                self.proxy_lbl.configure(text=t("tun_active"))
+            self.proxy_lbl.setText(t("tun_active") if not self.proxy_mode else t("proxy_set"))
         else:
-            self.proxy_lbl.configure(text=t("proxy_unset"))
+            self.proxy_lbl.setText(t("proxy_unset"))
 
-    def _on_engine_log(self, line):
-        pass
+    # ---------- signals from worker threads ----------
+    def _on_sig_refresh(self):
+        self._update_status_ui()
+        self.refresh_proxy_label()
 
-    def _emit_error(self, msg):
-        t = self.tr
-        def show():
-            self.status_lbl.configure(text=t("status_failed"))
-            messagebox.showerror(t("connect_error"), msg)
-        self.root.after(0, show)
+    def _on_sig_error(self, message):
+        self._update_status_ui()
+        QMessageBox.critical(self, self.tr("connect_error"), message)
 
+    def _on_sig_sub_done(self, profiles, error):
+        if error:
+            QMessageBox.critical(self, self.tr("sub_error"), error)
+        else:
+            added = self._merge_profiles(profiles or [])
+            QMessageBox.information(self, self.tr("add_key"),
+                                    self.tr("sub_added") % added)
+
+    # ---------- add ----------
     def open_add_dialog(self):
         t = self.tr
-        dlg = tk.Toplevel(self.root)
-        dlg.title(t("add_key"))
-        dlg.configure(bg=self.colors()["bg"])
-        dlg.geometry("380x140")
-        dlg.transient(self.root)
-        dlg.grab_set()
-        tk.Label(dlg, text=t("enter_link"), font=("Segoe UI", 10), bg=self.colors()["bg"], fg=self.colors()["text"]).pack(padx=14, pady=(14, 6))
-        entry = tk.Entry(dlg, font=("Consolas", 9), bg=self.colors()["surface"], fg=self.colors()["text"],
-                         insertbackground=self.colors()["text"])
-        entry.pack(fill="x", padx=14, pady=(0, 10))
-        entry.focus_set()
-        def submit():
-            uri = entry.get().strip()
-            if not uri:
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("add_key"))
+        dlg.setFixedWidth(400)
+        l = QVBoxLayout(dlg)
+        l.setContentsMargins(16, 16, 16, 16)
+        l.setSpacing(10)
+
+        hint = QLabel(t("enter_link"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size:12px; color:#9A97A6;")
+        l.addWidget(hint)
+
+        entry = QLineEdit(dlg)
+        entry.setPlaceholderText("vless://… или http(s)://…")
+        entry.setMinimumHeight(40)
+        entry.setStyleSheet(f"QLineEdit {{ background:{self.colors()['card']}; "
+                            f"color:{self.colors()['text']}; border-radius:8px; padding:8px; font-size:13px; }}")
+        l.addWidget(entry)
+
+        btns = QHBoxLayout()
+        cancel = QPushButton(t("cancel"))
+        cancel.setCursor(Qt.PointingHandCursor)
+        ok = RoundButton(t("ok"))
+        cancel.clicked.connect(dlg.reject)
+        ok.clicked.connect(lambda: self._add_submit(entry.text(), dlg))
+        btns.addWidget(cancel, 2)
+        btns.addWidget(ok, 3)
+        l.addLayout(btns)
+        entry.returnPressed.connect(lambda: self._add_submit(entry.text(), dlg))
+        entry.setFocus()
+        dlg.exec()
+
+    def _add_submit(self, raw, dlg):
+        t = self.tr
+        uri = raw.strip()
+        if not uri:
+            return
+        low = uri.lower()
+        if low.startswith("http://") or low.startswith("https://"):
+            dlg.accept()
+            self._import_subscription(uri)
+            return
+        try:
+            p = parse_vless(uri)
+        except ValueError:
+            QMessageBox.warning(dlg, t("add_key"), t("invalid_link"))
+            return
+        profiles = self.cfg.get("profiles", [])
+        for existing in profiles:
+            if (existing.get("uuid") == p.uuid and existing.get("host") == p.host
+                    and int(existing.get("port", 0)) == p.port):
+                self.cfg["current"] = profiles.index(existing)
+                save_config(self.cfg)
+                dlg.accept()
+                self.refresh_profiles()
                 return
-            low = uri.lower()
-            if low.startswith("http://") or low.startswith("https://"):
-                dlg.destroy()
-                self._import_subscription(uri)
-                return
-            try:
-                p = parse_vless(uri)
-            except ValueError:
-                messagebox.showerror(t("add_key"), t("invalid_link"))
-                return
-            profiles = self.cfg.get("profiles", [])
-            for existing in profiles:
-                if (existing.get("uuid") == p.uuid and existing.get("host") == p.host
-                        and int(existing.get("port", 0)) == p.port):
-                    self.cfg["current"] = profiles.index(existing)
-                    save_config(self.cfg)
-                    dlg.destroy()
-                    self.refresh_profiles()
-                    return
-            if not p.name:
-                p.name = "%s %d" % (t("server_name_prefix"), len(profiles) + 1)
-            profiles.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
-                             "path": p.path, "security": p.security, "transport": p.transport})
-            self.cfg["current"] = len(profiles) - 1
-            save_config(self.cfg)
-            dlg.destroy()
-            self.refresh_profiles()
-        tk.Button(dlg, text=t("ok"), command=submit, bg=self.colors()["primary"],
-                  fg=self.colors()["primary_text"], relief="flat", padx=24, pady=6, cursor="hand2").pack(pady=(4, 12))
-        dlg.bind("<Return>", lambda e: submit())
+        if not p.name:
+            p.name = "%s %d" % (t("server_name_prefix"), len(profiles) + 1)
+        profiles.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
+                         "path": p.path, "security": p.security, "transport": p.transport})
+        self.cfg["current"] = len(profiles) - 1
+        save_config(self.cfg)
+        dlg.accept()
+        self.refresh_profiles()
 
     def _import_subscription(self, url):
-        t = self.tr
-        self.status_lbl.configure(text=t("sub_loading"))
-        self.root.configure(cursor="wait")
         def worker():
             try:
                 profiles = fetch_subscription(url)
-                def done():
-                    self.root.configure(cursor="")
-                    added = self._merge_profiles(profiles)
-                    messagebox.showinfo(t("add_key"), t("sub_added") % added)
-                self.root.after(0, done)
+                self.sig_sub_done.emit(profiles, None)
             except Exception as e:
-                msg = str(e)
-                def fail():
-                    self.root.configure(cursor="")
-                    self._update_status_ui()
-                    messagebox.showerror(t("sub_error"), msg)
-                self.root.after(0, fail)
+                self.sig_sub_done.emit(None, str(e))
         threading.Thread(target=worker, daemon=True).start()
 
     def _merge_profiles(self, parsed_list):
-        """Добавляет профили без дублей (uuid+host+port). Возвращает число новых."""
         profiles = self.cfg.get("profiles", [])
         had_profiles = bool(profiles)
         first_new_index = None
         added = 0
         for p in parsed_list:
-            exists = False
-            for existing in profiles:
-                if (existing.get("uuid") == p.uuid and existing.get("host") == p.host
-                        and int(existing.get("port", 0)) == p.port):
-                    exists = True
-                    break
+            exists = any(existing.get("uuid") == p.uuid and existing.get("host") == p.host
+                         and int(existing.get("port", 0)) == p.port for existing in profiles)
             if exists:
                 continue
             if not p.name:
@@ -683,158 +871,101 @@ class TurboBeeApp:
             self.refresh_profiles()
         return added
 
+    # ---------- settings ----------
     def open_settings(self):
         t = self.tr
-        dlg = tk.Toplevel(self.root)
-        dlg.title(t("settings"))
-        dlg.configure(bg=self.colors()["bg"])
-        dlg.geometry("380x320")
-        dlg.transient(self.root)
-        dlg.grab_set()
+        c = self.colors()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("settings"))
+        dlg.setFixedWidth(400)
+        l = QVBoxLayout(dlg)
+        l.setContentsMargins(20, 18, 20, 16)
+        l.setSpacing(6)
 
-        row1 = tk.Frame(dlg, bg=self.colors()["bg"])
-        row1.pack(fill="x", padx=18, pady=(16, 4))
-        tk.Label(row1, text=t("routing_label"), font=("Segoe UI", 11, "bold"),
-                 bg=self.colors()["bg"], fg=self.colors()["text"]).pack(side="left")
-        bypass = tk.BooleanVar(value=self.cfg.get("bypass_ru", True))
-        cb = tk.Checkbutton(row1, variable=bypass, bg=self.colors()["bg"], activebackground=self.colors()["bg"],
-                            selectcolor=self.colors()["surface"], fg=self.colors()["text"])
-        cb.pack(side="right")
-        tk.Label(dlg, text=t("routing_summary"), font=("Segoe UI", 8),
-                 bg=self.colors()["bg"], fg=self.colors()["text_secondary"]).pack(anchor="w", padx=20)
+        lbl = QLabel(t("routing_label"))
+        lbl.setStyleSheet("font-size:13px; font-weight:700;")
+        l.addWidget(lbl)
+        bypass = QCheckBox(t("routing_summary"))
+        bypass.setChecked(self.cfg.get("bypass_ru", True))
+        bypass.setCursor(Qt.PointingHandCursor)
+        l.addWidget(bypass)
 
-        lang_var = tk.StringVar(value=self.cfg.get("language", "ru"))
-        tk.Label(dlg, text=t("language"), font=("Segoe UI", 11, "bold"),
-                 bg=self.colors()["bg"], fg=self.colors()["text"]).pack(anchor="w", padx=20, pady=(12, 2))
-        lang_frame = tk.Frame(dlg, bg=self.colors()["bg"])
-        lang_frame.pack(fill="x", padx=20)
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setStyleSheet("color:#3A3A48;")
+        l.addWidget(sep)
+
+        ll = QLabel(t("language")); ll.setStyleSheet("font-size:13px; font-weight:700;")
+        l.addWidget(ll)
+        lang_row = QHBoxLayout()
+        lang_group = QButtonGroup(self)
+        lang_group.setExclusive(True)
         for val, label in (("ru", "Русский"), ("en", "English")):
-            rb = tk.Radiobutton(lang_frame, text=label, variable=lang_var, value=val,
-                                bg=self.colors()["bg"], activebackground=self.colors()["bg"],
-                                selectcolor=self.colors()["surface"], fg=self.colors()["text"])
-            rb.pack(side="left", padx=(0, 18))
+            rb = QRadioButton(label)
+            rb.setCursor(Qt.PointingHandCursor)
+            rb.setChecked(self.cfg.get("language", "ru") == val)
+            lang_group.addButton(rb, 0 if val == "ru" else 1)
+            lang_row.addWidget(rb)
+        l.addLayout(lang_row)
 
-        theme_var = tk.StringVar(value=self.cfg.get("theme", "dark"))
-        tk.Label(dlg, text=t("theme"), font=("Segoe UI", 11, "bold"),
-                 bg=self.colors()["bg"], fg=self.colors()["text"]).pack(anchor="w", padx=20, pady=(12, 2))
-        theme_frame = tk.Frame(dlg, bg=self.colors()["bg"])
-        theme_frame.pack(fill="x", padx=20)
+        lt = QLabel(t("theme")); lt.setStyleSheet("font-size:13px; font-weight:700;")
+        l.addWidget(lt)
+        theme_row = QHBoxLayout()
+        theme_group = QButtonGroup(self)
+        theme_group.setExclusive(True)
         for val, key in (("dark", "dark_theme"), ("light", "light_theme")):
-            rb = tk.Radiobutton(theme_frame, text=t(key), variable=theme_var, value=val,
-                                bg=self.colors()["bg"], activebackground=self.colors()["bg"],
-                                selectcolor=self.colors()["surface"], fg=self.colors()["text"])
-            rb.pack(side="left", padx=(0, 18))
+            rb = QRadioButton(t(key))
+            rb.setCursor(Qt.PointingHandCursor)
+            rb.setChecked(self.cfg.get("theme", "dark") == val)
+            theme_group.addButton(rb, 0 if val == "dark" else 1)
+            theme_row.addWidget(rb)
+        l.addLayout(theme_row)
 
+        ok = RoundButton(t("ok"))
         def save():
-            self.cfg["bypass_ru"] = bypass.get()
-            if self.cfg["language"] != lang_var.get():
-                self.cfg["language"] = lang_var.get()
-            if self.cfg["theme"] != theme_var.get():
-                self.cfg["theme"] = theme_var.get()
+            self.cfg["bypass_ru"] = bypass.isChecked()
+            if lang_group.checkedId() == 1:
+                self.cfg["language"] = "en"
+            else:
+                self.cfg["language"] = "ru"
+            if theme_group.checkedId() == 1:
+                self.cfg["theme"] = "light"
+            else:
+                self.cfg["theme"] = "dark"
             save_config(self.cfg)
-            dlg.destroy()
+            dlg.accept()
             self.apply_theme()
             self.apply_language()
             if self.connected:
                 self.reconnect()
-        tk.Button(dlg, text=t("ok"), command=save, bg=self.colors()["primary"],
-                  fg=self.colors()["primary_text"], relief="flat", padx=28, pady=6, cursor="hand2").pack(pady=(14, 14))
+        ok.clicked.connect(save)
+        l.addWidget(ok)
 
-    def on_close(self):
+        dlg.exec()
+
+    def _on_engine_log(self, line):
+        pass
+
+    def closeEvent(self, e):
         try:
             self.engine.stop()
         except Exception:
             pass
         SystemProxy.set_proxy(False)
-        self.root.destroy()
-
-
-def _is_admin():
-    try:
-        import ctypes
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return False
-
-
-_SINGLE_MUTEX_HANDLE = None
-
-
-def _is_single_instance():
-    """Возвращает True, если это единственный экземпляр. Если приложение
-    уже запущено, показывает существующее окно и возвращает False."""
-    global _SINGLE_MUTEX_HANDLE
-    try:
-        import ctypes
-        from ctypes import wintypes
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        handle = kernel32.CreateMutexW(None, False, "Local\\TurboBeeVPN_SingleInstance")
-        if not handle:
-            return True
-        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
-            kernel32.CloseHandle(handle)
-            hwnd = user32.FindWindowW(None, "TurboBee VPN")
-            if hwnd:
-                user32.ShowWindow(wintypes.HWND(hwnd), 9)  # SW_RESTORE
-                user32.SetForegroundWindow(wintypes.HWND(hwnd))
-            return False
-        _SINGLE_MUTEX_HANDLE = handle
-        return True
-    except Exception:
-        return True
-
-
-def _elevate():
-    try:
-        import ctypes
-        import sys
-        if not getattr(sys, "frozen", False):
-            return True
-        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, "", None, 1)
-        return False
-    except Exception:
-        return True
-
-
-def _maybe_elevate():
-    import os
-    cfg = load_config()
-    if cfg.get("elevate_prompted", False):
-        return
-    cfg["elevate_prompted"] = True
-    save_config(cfg)
-    from tkinter import messagebox
-    from tkinter import Tk
-    root = Tk()
-    root.withdraw()
-    want = messagebox.askyesno(
-        "TurboBee VPN",
-        "VPN уже работает без прав администратора (системный прокси).\n"
-        "Для режима TUN (весь трафик перехватывается автоматически) можно "
-        "запустить приложение от имени администратора.\n\n"
-        "Перезапустить с правами администратора?",
-    )
-    root.destroy()
-    if want:
-        _elevate()
+        super().closeEvent(e)
 
 
 def main():
     if not _is_single_instance():
         return
-    if not _is_admin():
-        import sys
-        if getattr(sys, "frozen", False):
-            # Можно работать и без прав (прокси-режим). Перезапуск от имени
-            # администратора даёт TUN-режим. Предлагаем один раз.
-            try:
-                _maybe_elevate()
-            except Exception:
-                pass
-    root = tk.Tk()
-    app = TurboBeeApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    font = QFont("Segoe UI", 10)
+    app.setFont(font)
+    if not _is_admin() and getattr(sys, "frozen", False):
+        if _maybe_elevate():
+            return
+    w = TurboBeeWindow()
+    w.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
