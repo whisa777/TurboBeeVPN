@@ -154,26 +154,30 @@ def _is_single_instance():
         import ctypes
         from ctypes import wintypes
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
         user32 = ctypes.WinDLL("user32", use_last_error=True)
-        handle = kernel32.CreateMutexW(None, False, "Local\\TurboBeeVPN_SingleInstance")
+        handle = kernel32.CreateMutexW(None, False, "Global\\TurboBeeVPN_SingleInstance")
         if not handle:
             return True
         if ctypes.get_last_error() == 183:
+            # уже запущена одна копия — активируем её окно и не открываем второе
             kernel32.CloseHandle(handle)
-            hwnd = user32.FindWindowW(None, "TurboBee VPN")
-            from PySide6.QtWidgets import qApp
-            if hwnd:
-                user32.ShowWindow(wintypes.HWND(hwnd), 9)
-                user32.SetForegroundWindow(wintypes.HWND(hwnd))
-            else:
-                wins = qApp.topLevelWidgets()
-                for w in wins:
-                    if isinstance(w, QMainWindow):
-                        w.showNormal(); w.raise_(); w.activateWindow()
+            for title in ("TurboBee VPN",):
+                hwnd = user32.FindWindowW(None, title)
+                if hwnd:
+                    user32.ShowWindow(wintypes.HWND(hwnd), 9)
+                    user32.SetForegroundWindow(wintypes.HWND(hwnd))
+                    break
             return False
         _SINGLE_MUTEX_HANDLE = handle
         return True
-    except Exception:
+    except Exception as e:
+        try:
+            with open(os.path.join(os.environ.get("TEMP", "."), "turbobee_single.log"), "a", encoding="utf-8") as f:
+                import traceback
+                f.write("SINGLE-INSTANCE ERROR: %r\n%s\n" % (e, traceback.format_exc()))
+        except Exception:
+            pass
         return True
 
 
