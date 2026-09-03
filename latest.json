@@ -1,9 +1,9 @@
 {
-  "version": "2.1.36",
+  "version": "2.2",
   "windows": {
-    "version": "2.1.36",
+    "version": "2.2",
     "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN-Setup.exe",
-    "size": 65595866
+    "size": 65596322
   },
   "android": {
     "version": "2.1.34",
