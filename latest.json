@@ -1,11 +1,11 @@
 {
-  "version": "2.1.27",
+  "version": "2.1.28",
   "android": {
     "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.apk",
     "size": 21551528
   },
   "windows": {
     "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN-Setup.exe",
-    "size": 65518356
+    "size": 65519156
   }
 }
