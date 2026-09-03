@@ -3,11 +3,13 @@
   "windows": {
     "version": "2.21",
     "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN-Setup.exe",
-    "size": 65753074
+    "size": 65753074,
+    "changelog": "Навели косметику в меню,\nПоправили кнопки — стало проще,\nИ залатали пару мелочей, чтобы всё работало шустро."
   },
   "android": {
-    "version": "2.22",
+    "version": "2.23",
     "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.apk",
-    "size": 21702628
+    "size": 21703296,
+    "changelog": "Прибрались в меню настроек,\nКнопки стали настоящими кнопками,\nНазад теперь возвращает, а не закрывает всё,\nОкно обновления показывает, что изменилось."
   }
 }
