@@ -8,7 +8,7 @@
   },
   "android": {
     "version": "2.28",
-    "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN.apk",
+    "url": "https://github.com/whisa777/TurboBeeVPN/raw/main/TurboBeeVPN-2.28.apk",
     "size": 23699565,
     "changelog": "Тема Pudge: анимация при подключении (AnimationDrawable, бегущие кадры),\nвыключен — чёрная картинка Pudge,\nЧто нового — теперь текстом, не кнопками,\nПочинили установку обновлений."
   }
