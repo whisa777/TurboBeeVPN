@@ -1,5 +1,5 @@
 {
-  "version": "2.28",
+  "version": "2.29",
   "windows": {
     "version": "2.26",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
@@ -7,9 +7,9 @@
     "changelog": "Тема Pudge — светлая пастельно-сиреневая, фиолетовый Pudge теперь виден,\nТема Unicorn — фон розовый, без белого квадрата,\nФон окна совпадает с фоном приложения для Unicorn/Pudge,\nНастройки — строки с галочкой, выбираются в один клик,\nФикс запуска: QMovie больше не вызывает краш."
   },
   "android": {
-    "version": "2.28",
+    "version": "2.29",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 23699565,
-    "changelog": "Тема Pudge: анимация при подключении (AnimationDrawable, бегущие кадры),\nвыключен — чёрная картинка Pudge,\nЧто нового — теперь текстом, не кнопками,\nПочинили установку обновлений."
+    "size": 23699845,
+    "changelog": "Починена установка обновлений: теперь через системный установщик (PackageInstaller),\nТема Pudge: анимация при подключении (AnimationDrawable, бегущие кадры),\nвыключен — чёрная картинка Pudge,\nЧто нового — теперь текстом, не кнопками."
   }
 }
