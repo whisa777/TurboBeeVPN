@@ -9,7 +9,7 @@
   "android": {
     "version": "2.29",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 23699845,
+    "size": 23702293,
     "changelog": "Починена установка обновлений: теперь через системный установщик (PackageInstaller),\nТема Pudge: анимация при подключении (AnimationDrawable, бегущие кадры),\nвыключен — чёрная картинка Pudge,\nЧто нового — теперь текстом, не кнопками."
   }
 }
