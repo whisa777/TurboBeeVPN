@@ -1,5 +1,5 @@
 {
-  "version": "2.31",
+  "version": "2.32",
   "windows": {
     "version": "2.27",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
@@ -7,9 +7,9 @@
     "changelog": "Фон окна совпадает с фоном приложения (Pudge пастельный, Unicorn розовый),\nНастройки — строки с галочкой вместо кубиков,\nФикс запуска: QMovie больше не вызывает краш,\nШестерёнка отображается корректно."
   },
   "android": {
-    "version": "2.31",
+    "version": "2.32",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 23703969,
-    "changelog": "Фикс обновлений: скачивание+установка в одном foreground-сервисе (больше не теряется после сворачивания),\nПри полном выгрузке приложения VPN отключается,\nPudge выключен — тёмный силуэт."
+    "size": 28497404,
+    "changelog": "Тема Dota 2 — 6 героев (Bounty Hunter, Dark Willow, Lina, Lion, Nevermore, Skeleton King),\nРандомный герой при подключении, кнопка ? для выбора."
   }
 }
