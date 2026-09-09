@@ -1,10 +1,10 @@
 {
   "version": "2.38",
   "windows": {
-    "version": "2.32",
+    "version": "2.33",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-    "size": 99529355,
-    "changelog": "Настройки: выбор темы и языка с кружками-радио как в iOS (без рамок), в маршрутизации тумблер и крупнее шрифт"
+    "size": 100205135,
+    "changelog": "Настройки: выбор темы и языка с кружками-радио как в iOS (без рамок), в маршрутизации тумблер и крупнее шрифт.\nОбновили картинку подсказки в теме Dota 2"
   },
   "android": {
     "version": "2.38",
