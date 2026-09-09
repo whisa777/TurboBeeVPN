@@ -1,9 +1,9 @@
 {
   "version": "2.38",
   "windows": {
-    "version": "2.29",
+    "version": "2.30",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-    "size": 80065695,
+    "size": 80064556,
     "changelog": "Темы как на андроиде: Unicorn и Dota 2 со случайным героем при подключении. Исправлено автообновление (приложение теперь закрывается при установке)."
   },
   "android": {
