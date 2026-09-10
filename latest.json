@@ -6,10 +6,10 @@
     "size": 100205128,
     "changelog": "Настройки: тумблеры в выборе темы и языка — выбранное включается, остальные выключены, применяется сразу."
   },
-  "android": {
-    "version": "2.38",
+"android": {
+    "version": "2.39",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 40043433,
-    "changelog": "Включили поддержку дополнительных протоколов"
+    "size": 40050973,
+    "changelog": "Добавили удобные переключатели в настройки\nПопили чай\nРасслабились"
   }
 }
