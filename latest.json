@@ -7,9 +7,9 @@
     "changelog": "Настройки: тумблеры в выборе темы и языка — выбранное включается, остальные выключены, применяется сразу."
   },
 "android": {
-    "version": "2.41",
+    "version": "2.42",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 40043633,
-    "changelog": "Обновление старается установиться без лишних запросов"
+    "size": 40043617,
+    "changelog": "Поправили проходки для xhttp"
   }
 }
