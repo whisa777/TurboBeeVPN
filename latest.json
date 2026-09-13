@@ -1,5 +1,5 @@
 {
-  "version": "2.52",
+  "version": "2.53",
   "windows": {
     "version": "2.34",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
@@ -7,9 +7,9 @@
     "changelog": "Настройки: тумблеры в выборе темы и языка — выбранное включается, остальные выключены, применяется сразу."
   },
 "android": {
-    "version": "2.52",
+    "version": "2.53",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 40053765,
-    "changelog": "Поправили установку на телефонах Huawei"
+    "size": 40054053,
+    "changelog": "Поправили установку на Huawei"
   }
 }
