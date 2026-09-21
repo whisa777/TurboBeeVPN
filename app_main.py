@@ -60,6 +60,13 @@ LANG = {
         "sub_loading": "Загружаю подписку…",
         "sub_added": "Подписка добавлена: новых серверов — %d",
         "sub_error": "Ошибка подписки",
+        "refresh_tip": "Обновить ключи",
+        "refresh_keys_loading": "Обновляю ключи…",
+        "refresh_keys_none": "Подписок нет. Добавьте ссылку подписки через «Добавить ключ».",
+        "refresh_keys_done": "Ключи обновлены (%d)",
+        "refresh_keys_failed": "Не удалось обновить:",
+        "delete_group_title": "Удалить ключ",
+        "delete_group_msg": "Удалить подписку и все её серверы (%d)?",
     },
     "en": {
         "app_title": "TurboBee VPN",
@@ -104,6 +111,13 @@ LANG = {
         "sub_loading": "Loading subscription…",
         "sub_added": "Subscription added: %d new servers",
         "sub_error": "Subscription error",
+        "refresh_tip": "Update keys",
+        "refresh_keys_loading": "Updating keys…",
+        "refresh_keys_none": "No subscriptions. Add a subscription link via «Add key».",
+        "refresh_keys_done": "Keys updated (%d)",
+        "refresh_keys_failed": "Failed to update:",
+        "delete_group_title": "Delete key",
+        "delete_group_msg": "Delete the subscription and all its servers (%d)?",
     },
 }
 
@@ -340,6 +354,7 @@ class TurboBeeWindow(QMainWindow):
     sig_refresh = Signal()
     sig_error = Signal(str)
     sig_sub_done = Signal(object, object)
+    sig_refresh_keys = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -365,6 +380,7 @@ class TurboBeeWindow(QMainWindow):
         self.sig_refresh.connect(self._on_sig_refresh)
         self.sig_error.connect(self._on_sig_error)
         self.sig_sub_done.connect(self._on_sig_sub_done)
+        self.sig_refresh_keys.connect(self._on_sig_refresh_keys)
 
     # ---------- helpers ----------
     def tr(self, key):
@@ -464,6 +480,11 @@ class TurboBeeWindow(QMainWindow):
         self.keys_title_lbl.mousePressEvent = lambda e: self.toggle_keys_visible()
         self.keys_title_row.addWidget(self.keys_title_lbl)
         self.keys_title_row.addStretch(1)
+        self.refresh_btn = QPushButton("↻")
+        self.refresh_btn.setFixedSize(28, 28)
+        self.refresh_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_btn.clicked.connect(self.refresh_keys)
+        self.keys_title_row.addWidget(self.refresh_btn)
         self.central_layout.addLayout(self.keys_title_row)
 
         # Кнопка добавить
@@ -513,6 +534,11 @@ class TurboBeeWindow(QMainWindow):
         self.keys_title_lbl.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
         self.title_lbl.setStyleSheet(f"font-size:19px; font-weight:700; color:{c['text']};")
         self.settings_btn.setStyleSheet(f"QPushButton{{border:none; font-size:20px; color:{c['text']};}} QPushButton:hover{{color:{c['primary']};}}")
+        self.refresh_btn.setStyleSheet(
+            f"QPushButton{{border:1px solid {c['border']}; border-radius:14px; color:{c['text_secondary']};"
+            f"background:transparent; font-size:15px;}}"
+            f"QPushButton:hover{{color:{c['primary']}; border-color:{c['primary']};}}"
+            f"QPushButton:disabled{{color:{c['border']}; border-color:{c['border']};}}")
         self.proxy_lbl.setStyleSheet(f"font-size:9px; color:{c['text_secondary']};")
         self.add_btn.set_colors(c["primary"], c["primary_text"], c["hover"])
         self.keys_title_lbl.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
@@ -536,6 +562,7 @@ class TurboBeeWindow(QMainWindow):
         self.setWindowTitle(t("app_title"))
         self.title_lbl.setText(t("app_title"))
         self.add_btn.setText(t("add_key_btn"))
+        self.refresh_btn.setToolTip(t("refresh_tip"))
         self.keys_title_lbl.setText("%s (%d)" % (t("my_keys"), len(self.cfg.get("profiles", []))))
         self._update_status_ui()
         self.refresh_profiles()
@@ -662,11 +689,21 @@ class TurboBeeWindow(QMainWindow):
         profiles = self.cfg.get("profiles", [])
         if not (0 <= idx < len(profiles)):
             return
-        if QMessageBox.question(self, t("delete_title"), t("delete_msg") % profiles[idx].get("name", "?"),
-                                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
-            return
-        del profiles[idx]
-        if self.cfg.get("current", 0) >= len(profiles):
+        p = profiles[idx]
+        src = p.get("source")
+        if src:
+            group = [x for x in profiles if x.get("source") == src]
+            if QMessageBox.question(self, t("delete_group_title"),
+                                    t("delete_group_msg") % len(group),
+                                    QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+                return
+            self.cfg["profiles"] = [x for x in profiles if x.get("source") != src]
+        else:
+            if QMessageBox.question(self, t("delete_title"), t("delete_msg") % p.get("name", "?"),
+                                    QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+                return
+            del self.cfg["profiles"][idx]
+        if self.cfg.get("current", 0) >= len(self.cfg["profiles"]):
             self.cfg["current"] = 0
         save_config(self.cfg)
         if self.connected:
@@ -770,7 +807,9 @@ class TurboBeeWindow(QMainWindow):
         if error:
             QMessageBox.critical(self, self.tr("sub_error"), error)
         else:
-            added = self._merge_profiles(profiles or [])
+            url = getattr(self, "_pending_sub_url", None)
+            self._pending_sub_url = None
+            added = self._merge_profiles(profiles or [], url)
             QMessageBox.information(self, self.tr("add_key"),
                                     self.tr("sub_added") % added)
 
@@ -843,6 +882,8 @@ class TurboBeeWindow(QMainWindow):
         self.refresh_profiles()
 
     def _import_subscription(self, url):
+        self._pending_sub_url = url
+
         def worker():
             try:
                 profiles = fetch_subscription(url)
@@ -851,7 +892,79 @@ class TurboBeeWindow(QMainWindow):
                 self.sig_sub_done.emit(None, str(e))
         threading.Thread(target=worker, daemon=True).start()
 
-    def _merge_profiles(self, parsed_list):
+    def _sources(self):
+        seen = []
+        for p in self.cfg.get("profiles", []):
+            s = p.get("source")
+            if s and s not in seen:
+                seen.append(s)
+        return seen
+
+    def refresh_keys(self):
+        t = self.tr
+        sources = self._sources()
+        if not sources:
+            QMessageBox.information(self, t("refresh_tip"), t("refresh_keys_none"))
+            return
+        self.refresh_btn.setEnabled(False)
+        self.keys_title_lbl.setText(t("refresh_keys_loading"))
+
+        def worker():
+            results = []
+            for src in sources:
+                try:
+                    results.append((src, fetch_subscription(src), None))
+                except Exception as e:
+                    results.append((src, None, str(e)))
+            self.sig_refresh_keys.emit(results)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _replace_source(self, src, parsed):
+        t = self.tr
+        profiles = self.cfg.get("profiles", [])
+        cur = self.cfg.get("current", 0)
+        cur_gone = None
+        new = []
+        for i, p in enumerate(profiles):
+            if p.get("source") == src:
+                if i == cur:
+                    cur_gone = (p.get("uuid"), p.get("host"), int(p.get("port", 0)))
+            else:
+                new.append(p)
+        for p in parsed:
+            if not p.name:
+                p.name = "%s %d" % (t("server_name_prefix"), len(new) + 1)
+            new.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
+                        "path": p.path, "security": p.security, "transport": p.transport,
+                        "source": src})
+        self.cfg["profiles"] = new
+        if cur_gone and new:
+            for i, p in enumerate(new):
+                if (p.get("uuid"), p.get("host"), int(p.get("port", 0))) == cur_gone:
+                    self.cfg["current"] = i
+                    return
+            self.cfg["current"] = cur if cur < len(new) else max(0, len(new) - 1)
+
+    def _on_sig_refresh_keys(self, results):
+        t = self.tr
+        ok = 0
+        fails = []
+        for src, profiles, err in results:
+            if err:
+                fails.append("%s — %s" % (src, err))
+            else:
+                self._replace_source(src, profiles or [])
+                ok += 1
+        save_config(self.cfg)
+        self.refresh_btn.setEnabled(True)
+        self.refresh_profiles()
+        self._refresh_total_label()
+        if fails:
+            QMessageBox.warning(self, t("refresh_keys_failed"), "\n".join(fails[:4]))
+        elif ok > 0:
+            QMessageBox.information(self, t("refresh_tip"), t("refresh_keys_done") % ok)
+
+    def _merge_profiles(self, parsed_list, url=None):
         profiles = self.cfg.get("profiles", [])
         had_profiles = bool(profiles)
         first_new_index = None
@@ -863,8 +976,11 @@ class TurboBeeWindow(QMainWindow):
                 continue
             if not p.name:
                 p.name = "%s %d" % (self.tr("server_name_prefix"), len(profiles) + 1)
-            profiles.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
-                             "path": p.path, "security": p.security, "transport": p.transport})
+            d = {"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
+                 "path": p.path, "security": p.security, "transport": p.transport}
+            if url:
+                d["source"] = url
+            profiles.append(d)
             if first_new_index is None:
                 first_new_index = len(profiles) - 1
             added += 1
