@@ -1,13 +1,14 @@
 import os
+import random
 import sys
 import threading
 
-from PySide6.QtCore import Qt, QTimer, QPoint, Signal, QObject
-from PySide6.QtGui import QFont, QIcon, QPixmap, QColor, QPainter, QBrush, QPen, QLinearGradient
+from PySide6.QtCore import Qt, QTimer, QPoint, QPointF, QSize, QRectF, QVariantAnimation, Signal, QObject
+from PySide6.QtGui import QFont, QIcon, QPixmap, QColor, QPainter, QBrush, QPen, QLinearGradient, QMovie
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QLineEdit, QCheckBox, QRadioButton,
-    QButtonGroup, QDialog, QMessageBox, QSizePolicy,
+    QButtonGroup, QDialog, QMessageBox, QSizePolicy, QStackedWidget,
 )
 
 from app_core import (
@@ -67,6 +68,22 @@ LANG = {
         "refresh_keys_failed": "Не удалось обновить:",
         "delete_group_title": "Удалить ключ",
         "delete_group_msg": "Удалить подписку и все её серверы (%d)?",
+        "unicorn_theme": "Unicorn",
+        "dota2_theme": "Dota 2",
+        "back": "← Назад",
+        "updates_menu": "Обновления",
+        "settings_exit": "Выход",
+        "app_version": "Версия %s",
+        "update_title": "Доступна новая версия",
+        "update_check_title": "Проверка обновлений",
+        "update_msg": "Вышла версия %s. Скачать и обновить сейчас?",
+        "update_whats_new": "Что нового в %s?",
+        "update_checking": "Проверка обновлений…",
+        "update_none": "Установлена актуальная версия",
+        "update_downloading": "Скачивание обновления…",
+        "update_launched": "Обновление запущено. Приложение будет закрыто и перезапущено автоматически.",
+        "update_failed": "Не удалось загрузить обновление",
+        "check_update_btn": "Проверить обновление",
     },
     "en": {
         "app_title": "TurboBee VPN",
@@ -118,6 +135,22 @@ LANG = {
         "refresh_keys_failed": "Failed to update:",
         "delete_group_title": "Delete key",
         "delete_group_msg": "Delete the subscription and all its servers (%d)?",
+        "unicorn_theme": "Unicorn",
+        "dota2_theme": "Dota 2",
+        "back": "← Back",
+        "updates_menu": "Updates",
+        "settings_exit": "Exit",
+        "app_version": "Version %s",
+        "update_title": "Update available",
+        "update_check_title": "Check for updates",
+        "update_msg": "Version %s is available. Download and update now?",
+        "update_whats_new": "What's new in %s?",
+        "update_checking": "Checking for updates…",
+        "update_none": "You have the latest version",
+        "update_downloading": "Downloading update…",
+        "update_launched": "Update launched. The application will close and restart automatically.",
+        "update_failed": "Failed to download update",
+        "check_update_btn": "Check for updates",
     },
 }
 
@@ -150,6 +183,46 @@ LIGHT = {
     "green": "#3DA84C",
 }
 
+UNICORN = {
+    "bg": "#FFF0F5",
+    "surface": "#FFF0F5",
+    "card": "#FFE4EE",
+    "border": "#F5CFDF",
+    "text": "#5A2A43",
+    "text_secondary": "#B07B96",
+    "primary": "#F48FB1",
+    "primary_text": "#FFFFFF",
+    "accent": "#EC6FA4",
+    "hover": "#F06292",
+    "green": "#66BB6A",
+}
+
+# Тёмная тема Dota 2 — цвета как на Android (dota2_bg / dota2_toolbar / dota2_title).
+DOTA2 = {
+    "bg": "#000000",
+    "surface": "#141418",
+    "card": "#1C1C22",
+    "border": "#2A2A32",
+    "text": "#D4D0CC",
+    "text_secondary": "#7E7A76",
+    "primary": "#F0A93C",
+    "primary_text": "#17130A",
+    "accent": "#C8811F",
+    "hover": "#E09734",
+    "green": "#4CAF50",
+}
+
+# Герои Dota 2 (как пул на Android). Имена файлов — в папке Dota2 (без суффикса UP/DOWN).
+DOTA2_HEROES = [
+    ("pudge", "pudge_hero"),
+    ("bounty_hunter", "bounty_hero"),
+    ("dark_willow", "willow_hero"),
+    ("lina", "lina_hero"),
+    ("lion", "lion_hero"),
+    ("nevermore", "sf_hero"),
+    ("skeleton_king", "wraithking_hero"),
+]
+
 
 def _is_admin():
     try:
@@ -174,7 +247,6 @@ def _is_single_instance():
         if not handle:
             return True
         if ctypes.get_last_error() == 183:
-            # уже запущена одна копия — активируем её окно и не открываем второе
             kernel32.CloseHandle(handle)
             for title in ("TurboBee VPN",):
                 hwnd = user32.FindWindowW(None, title)
@@ -231,6 +303,7 @@ def _maybe_elevate():
     if box.clickedButton() is btn_yes:
         return _elevate()
     return False
+
 
 def load_logo():
     """Ищет логотип рядом с exe/скриптом."""
@@ -309,21 +382,18 @@ class StatusDot(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         r = self.rect()
         cx, cy = r.center().x(), r.center().y()
-        # внешнее кольцо
         p.setBrush(QColor("#3A3A48" if not self.connected else "#2A2A33"))
         p.setPen(Qt.NoPen)
         p.drawEllipse(QPoint(cx, cy), 44, 44)
         c = self.color
         p.setBrush(QColor(c))
         p.drawEllipse(QPoint(cx, cy), 36, 36)
-        # внутренняя точка
         p.setBrush(QColor("#1B1B22" if not self.connected else c))
         p.drawEllipse(QPoint(cx, cy), 20, 20)
-        # символ
         p.setPen(QPen(QColor("#FFFFFF" if self.connected else "#1B1B22"), 3, Qt.SolidLine, Qt.RoundCap))
         f = QFont("Segoe UI Symbol", 22, QFont.Bold)
         p.setFont(f)
-        glyph = "\u2714" if self.connected else "\u23FB"
+        glyph = "✔" if self.connected else "⏻"
         p.drawText(r, Qt.AlignCenter, glyph)
 
 
@@ -341,13 +411,79 @@ class KeyRow(QFrame):
         self.del_btn = QLabel("✕")
         self.del_btn.setCursor(Qt.PointingHandCursor)
         self.del_btn.setStyleSheet("color: #C8811F; font-size: 14px;")
+        layout.addWidget(self.del_btn)
         layout.addWidget(self.marker)
         layout.addWidget(self.name, 1)
-        layout.addWidget(self.del_btn)
 
 
 class MyScrollArea(QScrollArea):
     pass
+
+
+class ToggleSwitch(QWidget):
+    """Тумблер в стиле iOS с плавной анимацией.
+
+    visual_only=True — только индикация (клики надо вешать на родительскую строку)."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, color_on="#4CAF50", color_track="#3A3A48", checked=False,
+                 visual_only=False, parent=None):
+        super().__init__(parent)
+        self._on = bool(checked)
+        self._t = 1.0 if self._on else 0.0
+        self._anim = None
+        self._visual = visual_only
+        self._color_on = color_on
+        self._color_track = color_track
+        self.setFixedSize(50, 28)
+        self.setCursor(Qt.ArrowCursor if visual_only else Qt.PointingHandCursor)
+
+    def is_on(self):
+        return self._on
+
+    def set_colors(self, color_on, color_track):
+        self._color_on = color_on
+        self._color_track = color_track
+        self.update()
+
+    def set_on(self, on):
+        if self._on == on:
+            return
+        self._on = on
+        start, end = self._t, 1.0 if on else 0.0
+        an = QVariantAnimation(self)
+        an.setStartValue(start)
+        an.setEndValue(end)
+        an.setDuration(150)
+        an.valueChanged.connect(self._on_anim)
+        an.start()
+        self._anim = an
+        self.toggled.emit(self._on)
+
+    def _on_anim(self, v):
+        self._t = float(v)
+        self.update()
+
+    def mousePressEvent(self, e):
+        if self._visual:
+            e.ignore()
+            return
+        self.set_on(not self._on)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        track = QColor(self._color_on) if self._on else QColor(self._color_track)
+        p.setPen(Qt.NoPen)
+        p.setBrush(track)
+        p.drawRoundedRect(1, 1, w - 2, h - 2, h / 2 - 1, h / 2 - 1)
+        knob = 22
+        gap = 3
+        x = gap + (w - knob - 2 * gap) * self._t
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawEllipse(QRectF(x, (h - knob) / 2, knob, knob))
 
 
 class TurboBeeWindow(QMainWindow):
@@ -355,10 +491,15 @@ class TurboBeeWindow(QMainWindow):
     sig_error = Signal(str)
     sig_sub_done = Signal(object, object)
     sig_refresh_keys = Signal(object)
+    sig_update = Signal(object)
 
     def __init__(self):
         super().__init__()
         self.cfg = load_config()
+        if self.cfg.get("theme") == "pudge":
+            # Тема Pudge заменена темой Dota 2 (как на Android).
+            self.cfg["theme"] = "dota2"
+            save_config(self.cfg)
         self.cfg.setdefault("total_stats", {})
         self.engine = VpnEngine()
         self.engine.add_log_listener(self._on_engine_log)
@@ -368,6 +509,8 @@ class TurboBeeWindow(QMainWindow):
         self.session_down = 0
         self.session_up = 0
         self._last_sample = None
+        self._dota2_hero = None
+        self._dota2_used = []
         self._build_ui()
         self.apply_theme()
         self.apply_language()
@@ -381,13 +524,26 @@ class TurboBeeWindow(QMainWindow):
         self.sig_error.connect(self._on_sig_error)
         self.sig_sub_done.connect(self._on_sig_sub_done)
         self.sig_refresh_keys.connect(self._on_sig_refresh_keys)
+        self.sig_update.connect(self._on_sig_update)
+        self.check_for_update_background()
 
     # ---------- helpers ----------
     def tr(self, key):
         return LANG.get(self.cfg.get("language", "ru"), LANG["ru"]).get(key, key)
 
+    def _theme_key(self):
+        theme = self.cfg.get("theme", "dark")
+        return "dota2" if theme == "pudge" else theme
+
     def colors(self):
-        return DARK if self.cfg.get("theme", "dark") == "dark" else LIGHT
+        theme = self._theme_key()
+        if theme == "light":
+            return LIGHT
+        if theme == "unicorn":
+            return UNICORN
+        if theme == "dota2":
+            return DOTA2
+        return DARK
 
     def _current_profile(self):
         profiles = self.cfg.get("profiles", [])
@@ -420,7 +576,7 @@ class TurboBeeWindow(QMainWindow):
         self.logo_lbl.setFixedSize(40, 40)
         self.title_lbl = QLabel("TurboBee VPN")
         self.title_lbl.setStyleSheet("font-size: 19px; font-weight: 700;")
-        self.settings_btn = QPushButton("⚙")
+        self.settings_btn = QPushButton("☰")
         self.settings_btn.setFixedSize(36, 36)
         self.settings_btn.setCursor(Qt.PointingHandCursor)
         self.settings_btn.setStyleSheet("QPushButton{border:none; font-size:20px;}")
@@ -438,7 +594,6 @@ class TurboBeeWindow(QMainWindow):
         self.central_layout.addWidget(self.status_card)
 
         self.status_dot = StatusDot()
-        # клик по карточке переключает подключение
         self.status_dot.mousePressEvent = lambda e: self.toggle_connect()
         self.status_layout.addWidget(self.status_dot, alignment=Qt.AlignCenter)
 
@@ -451,6 +606,14 @@ class TurboBeeWindow(QMainWindow):
         self.status_hint.setAlignment(Qt.AlignCenter)
         self.status_hint.setStyleSheet("font-size: 10px; background: transparent;")
         self.status_layout.addWidget(self.status_hint)
+
+        # Картинка для unicorn/dota2 тем (под статусом)
+        self.unicorn_lbl = QLabel()
+        self.unicorn_lbl.setAlignment(Qt.AlignCenter)
+        self.unicorn_lbl.mousePressEvent = lambda e: self.toggle_connect()
+        self.unicorn_lbl.setCursor(Qt.PointingHandCursor)
+        self.status_layout.addWidget(self.unicorn_lbl, alignment=Qt.AlignCenter)
+        self.unicorn_lbl.hide()
 
         # скорость
         self.traffic_row = QHBoxLayout()
@@ -513,7 +676,8 @@ class TurboBeeWindow(QMainWindow):
 
     def apply_theme(self):
         c = self.colors()
-        self.central.setStyleSheet(f"""
+        self.setStyleSheet(f"""
+            QMainWindow {{ background: {c['bg']}; }}
             QWidget {{ background-color: {c['bg']}; color: {c['text']}; }}
             QFrame#statusCard {{ background: {c['surface']}; border-radius: 18px; }}
             QScrollArea {{ background: transparent; border: none; }}
@@ -523,8 +687,13 @@ class TurboBeeWindow(QMainWindow):
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
             QPushButton {{ }}
         """)
+        self.central.setStyleSheet("")
         self.status_card.setObjectName("statusCard")
-        self.status_card.setStyleSheet(f"#statusCard {{ background: {c['surface']}; border-radius: 18px; }}")
+        theme = self._theme_key()
+        if theme in ("unicorn", "dota2"):
+            self.status_card.setStyleSheet("#statusCard { background: transparent; border: none; }")
+        else:
+            self.status_card.setStyleSheet(f"#statusCard {{ background: {c['surface']}; border-radius: 18px; }}")
         self.status_lbl.setStyleSheet(f"font-size:17px; font-weight:700; color:{c['text']}; background: transparent;")
         self.status_hint.setStyleSheet(f"font-size:10px; color:{c['text_secondary']}; background: transparent;")
         self.traffic_up_lbl.setStyleSheet(f"font-weight:700; font-size:12px; color:{c['primary']}; background: transparent;")
@@ -541,7 +710,6 @@ class TurboBeeWindow(QMainWindow):
             f"QPushButton:disabled{{color:{c['border']}; border-color:{c['border']};}}")
         self.proxy_lbl.setStyleSheet(f"font-size:9px; color:{c['text_secondary']};")
         self.add_btn.set_colors(c["primary"], c["primary_text"], c["hover"])
-        self.keys_title_lbl.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
         # обновить строки ключей
         for i in range(self.keys_container_layout.count()):
             item = self.keys_container_layout.itemAt(i)
@@ -578,16 +746,81 @@ class TurboBeeWindow(QMainWindow):
             self.status_hint.setText(t("tap_to_connect"))
         self._draw_status_dot()
 
+    def _pick_dota2_hero(self):
+        """Выбирает случайного неиспользуемого героя (как пул на Android)."""
+        used = set(self._dota2_used)
+        rest = [h for _, h in DOTA2_HEROES if h not in used]
+        if not rest:
+            self._dota2_used = []
+            rest = [h for _, h in DOTA2_HEROES]
+        hero = random.choice(rest)
+        self._dota2_used.append(hero)
+        self._dota2_hero = hero
+        return hero
+
+    def _theme_asset_path(self):
+        """Ищет GIF/PNG картинку для темы Unicorn/Dota 2.
+
+        Unicorn: <Stem>UP/DOWN. Dota 2: при подключении — анимация случайного
+        героя (<hero>.gif), при отключении — статичная подсказка HelpDOWN."""
+        theme = self._theme_key()
+        exts = (".gif", ".png", ".jpg")
+        if theme == "unicorn":
+            folder = "Unicorn"
+            state = "UP" if self.connected else "DOWN"
+            stems = ["Unicorn" + state + e for e in exts]
+        elif theme == "dota2":
+            folder = "Dota2"
+            if self.connected:
+                if not self._dota2_hero:
+                    self._pick_dota2_hero()
+                stems = [self._dota2_hero + e for e in exts]
+            else:
+                stems = ["HelpDOWN.png"]
+        else:
+            return None
+        p = os.path.dirname(os.path.abspath(__file__))
+        bases = [p]
+        if getattr(sys, "frozen", False):
+            meipass = getattr(sys, "_MEIPASS", p)
+            bases.insert(0, meipass)
+        for base in bases:
+            for stem in stems:
+                cand = os.path.join(base, folder, stem)
+                if os.path.exists(cand):
+                    return cand
+        return None
+
     def _draw_status_dot(self):
         c = self.colors()
+        theme = self._theme_key()
         self.status_dot.set_state(self.connected, c["green"] if self.connected else c["primary"])
+        if theme in ("unicorn", "dota2"):
+            path = self._theme_asset_path()
+            if not path:
+                self.unicorn_lbl.hide()
+                self.status_dot.show()
+                return
+            target = QSize(176, 176)
+            if path.lower().endswith('.gif'):
+                movie = QMovie(path)
+                movie.setScaledSize(target)
+                self.unicorn_lbl.setMovie(movie)
+                movie.start()
+            else:
+                self.unicorn_lbl.setPixmap(QPixmap(path).scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.unicorn_lbl.setFixedSize(176, 176)
+            self.unicorn_lbl.show()
+            self.status_dot.hide()
+        else:
+            self.unicorn_lbl.hide()
+            self.status_dot.show()
 
     # ---------- traffic ----------
     def _on_tick(self):
         if self.connected:
             self._update_traffic_ui()
         elif self._last_sample is not None:
-            # после отключения — обновить суммарную строку и сбросить
             self._last_sample = None
             self._refresh_total_label()
 
@@ -643,7 +876,6 @@ class TurboBeeWindow(QMainWindow):
         t = self.tr
         profiles = self.cfg.get("profiles", [])
         self.keys_title_lbl.setText("%s (%d)" % (t("my_keys"), len(profiles)))
-        # очистить (кроме stretch)
         while self.keys_container_layout.count() > 1:
             item = self.keys_container_layout.takeAt(0)
             w = item.widget()
@@ -736,7 +968,9 @@ class TurboBeeWindow(QMainWindow):
             p = profiles[self.cfg.get("current", 0)]
             profile = Profile(
                 p.get("name", "?"), p.get("host"), int(p.get("port")),
-                p.get("uuid"), p.get("path", "/"), p.get("security", "none"), p.get("transport", "tcp"))
+                p.get("uuid"), p.get("path", "/"), p.get("security", "none"), p.get("transport", "tcp"),
+                sni=p.get("sni", ""), fingerprint=p.get("fp", "chrome"),
+                public_key=p.get("pbk", ""), short_id=p.get("sid", ""), mode=p.get("mode", "auto"))
             bypass_ru = self.cfg.get("bypass_ru", True)
             use_tun = _is_admin()
 
@@ -770,6 +1004,7 @@ class TurboBeeWindow(QMainWindow):
     def disconnect(self):
         self.connected = False
         self.proxy_mode = False
+        self._dota2_hero = None
         self._commit_session()
         self._clear_traffic_labels()
         self.engine.stop()
@@ -875,7 +1110,9 @@ class TurboBeeWindow(QMainWindow):
         if not p.name:
             p.name = "%s %d" % (t("server_name_prefix"), len(profiles) + 1)
         profiles.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
-                         "path": p.path, "security": p.security, "transport": p.transport})
+                         "path": p.path, "security": p.security, "transport": p.transport,
+                         "sni": p.sni, "fp": p.fingerprint, "pbk": p.public_key,
+                         "sid": p.short_id, "mode": p.mode})
         self.cfg["current"] = len(profiles) - 1
         save_config(self.cfg)
         dlg.accept()
@@ -936,7 +1173,8 @@ class TurboBeeWindow(QMainWindow):
                 p.name = "%s %d" % (t("server_name_prefix"), len(new) + 1)
             new.append({"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
                         "path": p.path, "security": p.security, "transport": p.transport,
-                        "source": src})
+                        "sni": p.sni, "fp": p.fingerprint, "pbk": p.public_key,
+                        "sid": p.short_id, "mode": p.mode, "source": src})
         self.cfg["profiles"] = new
         if cur_gone and new:
             for i, p in enumerate(new):
@@ -977,7 +1215,9 @@ class TurboBeeWindow(QMainWindow):
             if not p.name:
                 p.name = "%s %d" % (self.tr("server_name_prefix"), len(profiles) + 1)
             d = {"name": p.name, "host": p.host, "port": p.port, "uuid": p.uuid,
-                 "path": p.path, "security": p.security, "transport": p.transport}
+                 "path": p.path, "security": p.security, "transport": p.transport,
+                 "sni": p.sni, "fp": p.fingerprint, "pbk": p.public_key,
+                 "sid": p.short_id, "mode": p.mode}
             if url:
                 d["source"] = url
             profiles.append(d)
@@ -992,74 +1232,401 @@ class TurboBeeWindow(QMainWindow):
         return added
 
     # ---------- settings ----------
+    def _choice_row(self, text, checked, onclick):
+        """Строка выбора с тумблером-индикатором (как в iOS).
+
+        Возвращает (frame, label, toggle), чтобы обновлять состояние списка."""
+        c = self.colors()
+        row = QFrame()
+        row.setStyleSheet("QFrame { background: transparent; border: none; }")
+        h = QHBoxLayout(row)
+        h.setContentsMargins(4, 10, 4, 10)
+        h.setSpacing(12)
+        name = QLabel(text)
+        name.setStyleSheet(f"font-size:15px; font-weight:500; color:{c['text']};")
+        toggle = ToggleSwitch(color_on=c['green'], color_track=c['border'],
+                              checked=checked, visual_only=True)
+        h.addWidget(name)
+        h.addStretch(1)
+        h.addWidget(toggle, 0, Qt.AlignVCenter)
+        row.mousePressEvent = lambda e, f=onclick: f()
+        for w in (row, name, toggle):
+            w.setCursor(Qt.PointingHandCursor)
+            w.mousePressEvent = row.mousePressEvent
+        return row, name, toggle
+
+    def _make_menu_row(self, text, onclick):
+        """Строка главного меню настроек с заголовком и стрелкой."""
+        c = self.colors()
+        row = QFrame()
+        row.setStyleSheet(f"QFrame {{ background: {c['card']}; border-radius: 12px; }}")
+        h = QHBoxLayout(row)
+        h.setContentsMargins(16, 16, 16, 16)
+        name = QLabel(text)
+        name.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
+        arrow = QLabel("›")
+        arrow.setStyleSheet(f"font-size:22px; color:{c['primary']}; font-weight:bold;")
+        h.addWidget(name)
+        h.addStretch(1)
+        h.addWidget(arrow)
+        row.mousePressEvent = lambda e, f=onclick: f()
+        for w in (row, name, arrow):
+            w.setCursor(Qt.PointingHandCursor)
+            w.mousePressEvent = row.mousePressEvent
+        row.label = name
+        return row
+
     def open_settings(self):
         t = self.tr
         c = self.colors()
         dlg = QDialog(self)
         dlg.setWindowTitle(t("settings"))
         dlg.setFixedWidth(400)
-        l = QVBoxLayout(dlg)
-        l.setContentsMargins(20, 18, 20, 16)
-        l.setSpacing(6)
+        dlg.setMinimumHeight(500)
+        dlg_layout = QVBoxLayout(dlg)
+        dlg_layout.setContentsMargins(0, 0, 0, 0)
+        dlg_layout.setSpacing(0)
 
-        lbl = QLabel(t("routing_label"))
-        lbl.setStyleSheet("font-size:13px; font-weight:700;")
-        l.addWidget(lbl)
-        bypass = QCheckBox(t("routing_summary"))
-        bypass.setChecked(self.cfg.get("bypass_ru", True))
-        bypass.setCursor(Qt.PointingHandCursor)
-        l.addWidget(bypass)
+        stack = QStackedWidget()
+        dlg_layout.addWidget(stack)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setStyleSheet("color:#3A3A48;")
-        l.addWidget(sep)
+        # Реестр виджетов диалога для живой перерисовки при смене темы/языка.
+        refs = {
+            "titles": [],     # (QLabel, key) — заголовки страниц
+            "menus": [],      # (QLabel, key) — пункты главного меню
+            "rows": [],       # (QLabel, key|None, ToggleSwitch) — строки выбора
+            "pages": {},      # page_index -> [(val, QLabel, key, ToggleSwitch)]
+            "bypass": None,   # (QLabel, ToggleSwitch)
+            "backs": [],      # QPushButton
+            "exit": None,     # QPushButton
+            "version": None,  # QLabel
+        }
+        self._dlg_refs = refs
+        stack_ref = [stack]
 
-        ll = QLabel(t("language")); ll.setStyleSheet("font-size:13px; font-weight:700;")
-        l.addWidget(ll)
-        lang_row = QHBoxLayout()
-        lang_group = QButtonGroup(self)
-        lang_group.setExclusive(True)
-        for val, label in (("ru", "Русский"), ("en", "English")):
-            rb = QRadioButton(label)
-            rb.setCursor(Qt.PointingHandCursor)
-            rb.setChecked(self.cfg.get("language", "ru") == val)
-            lang_group.addButton(rb, 0 if val == "ru" else 1)
-            lang_row.addWidget(rb)
-        l.addLayout(lang_row)
+        # --- Страница 0: главное меню настроек ---
+        page_main = QWidget()
+        page_main_l = QVBoxLayout(page_main)
+        page_main_l.setContentsMargins(20, 18, 20, 16)
+        page_main_l.setSpacing(8)
 
-        lt = QLabel(t("theme")); lt.setStyleSheet("font-size:13px; font-weight:700;")
-        l.addWidget(lt)
-        theme_row = QHBoxLayout()
-        theme_group = QButtonGroup(self)
-        theme_group.setExclusive(True)
-        for val, key in (("dark", "dark_theme"), ("light", "light_theme")):
-            rb = QRadioButton(t(key))
-            rb.setCursor(Qt.PointingHandCursor)
-            rb.setChecked(self.cfg.get("theme", "dark") == val)
-            theme_group.addButton(rb, 0 if val == "dark" else 1)
-            theme_row.addWidget(rb)
-        l.addLayout(theme_row)
+        title = QLabel(t("settings"))
+        title.setStyleSheet(f"font-size:20px; font-weight:700; color:{c['text']};")
+        refs["titles"].append((title, "settings"))
+        page_main_l.addWidget(title)
+        page_main_l.addSpacing(8)
 
-        ok = RoundButton(t("ok"))
-        def save():
-            self.cfg["bypass_ru"] = bypass.isChecked()
-            if lang_group.checkedId() == 1:
-                self.cfg["language"] = "en"
-            else:
-                self.cfg["language"] = "ru"
-            if theme_group.checkedId() == 1:
-                self.cfg["theme"] = "light"
-            else:
-                self.cfg["theme"] = "dark"
+        for key, idx in (("routing_label", 1), ("language", 2), ("theme", 3), ("updates_menu", 4)):
+            mr = self._make_menu_row(t(key), lambda i=idx: stack_ref[0].setCurrentIndex(i))
+            refs["menus"].append((mr.label, key))
+            page_main_l.addWidget(mr)
+        page_main_l.addStretch(1)
+
+        # Кнопка выхода
+        exit_btn = RoundButton(t("settings_exit"))
+        exit_btn.set_colors("#c0392b", "#FFFFFF", "#e74c3c")
+        exit_btn.clicked.connect(dlg.close)
+        refs["exit"] = exit_btn
+        page_main_l.addWidget(exit_btn)
+
+        stack.addWidget(page_main)
+
+        # --- Страница 1: Маршрутизация ---
+        page_routing = QWidget()
+        page_routing_l = QVBoxLayout(page_routing)
+        page_routing_l.setContentsMargins(20, 18, 20, 16)
+        page_routing_l.setSpacing(10)
+
+        rt_title = QLabel(t("routing_label"))
+        rt_title.setStyleSheet(f"font-size:20px; font-weight:700; color:{c['text']};")
+        refs["titles"].append((rt_title, "routing_label"))
+        page_routing_l.addWidget(rt_title)
+        page_routing_l.addSpacing(4)
+
+        bypass_row = QFrame()
+        bypass_row.setStyleSheet("QFrame { background: transparent; border: none; }")
+        bypass_h = QHBoxLayout(bypass_row)
+        bypass_h.setContentsMargins(4, 14, 4, 14)
+        bypass_h.setSpacing(12)
+        bypass_lbl = QLabel(t("routing_summary"))
+        bypass_lbl.setWordWrap(True)
+        bypass_lbl.setStyleSheet(f"font-size:16px; font-weight:600; color:{c['text']};")
+        bypass = ToggleSwitch(color_on=c['green'], color_track=c['border'],
+                              checked=self.cfg.get("bypass_ru", True))
+        bypass_h.addWidget(bypass_lbl, 1)
+        bypass_h.addWidget(bypass, 0, Qt.AlignVCenter)
+        refs["bypass"] = (bypass_lbl, bypass)
+        page_routing_l.addWidget(bypass_row)
+        page_routing_l.addStretch(1)
+
+        back_btn1 = RoundButton(t("back"))
+        back_btn1.clicked.connect(lambda: stack.setCurrentIndex(0))
+        refs["backs"].append(back_btn1)
+        page_routing_l.addWidget(back_btn1)
+
+        def save_routing():
+            self.cfg["bypass_ru"] = bypass.is_on()
             save_config(self.cfg)
-            dlg.accept()
-            self.apply_theme()
-            self.apply_language()
             if self.connected:
                 self.reconnect()
-        ok.clicked.connect(save)
-        l.addWidget(ok)
+
+        def click_bypass(e):
+            bypass.set_on(not bypass.is_on())
+
+        for w in (bypass_row, bypass_lbl):
+            w.setCursor(Qt.PointingHandCursor)
+            w.mousePressEvent = click_bypass
+        bypass.toggled.connect(lambda _: save_routing())
+        stack.addWidget(page_routing)
+
+        # --- Страница 2: Язык ---
+        page_lang = QWidget()
+        page_lang_l = QVBoxLayout(page_lang)
+        page_lang_l.setContentsMargins(20, 18, 20, 16)
+        page_lang_l.setSpacing(8)
+
+        lang_title = QLabel(t("language"))
+        lang_title.setStyleSheet(f"font-size:20px; font-weight:700; color:{c['text']};")
+        refs["titles"].append((lang_title, "language"))
+        page_lang_l.addWidget(lang_title)
+        page_lang_l.addSpacing(4)
+
+        cur_lang = self.cfg.get("language", "ru")
+        lang_rows = []
+
+        def pick_lang(v):
+            self.cfg["language"] = v
+            save_config(self.cfg)
+            self.apply_language()
+            self.apply_theme()
+            self._sync_choice_rows(lang_rows, self.cfg.get("language", "ru"))
+            self._refresh_settings_dialog()
+
+        for val, label in (("ru", "Русский"), ("en", "English")):
+            row, name, toggle = self._choice_row(
+                label, cur_lang == val, lambda v=val: pick_lang(v))
+            lang_rows.append((val, name, None, toggle))
+            refs["rows"].append((name, None, toggle))
+            page_lang_l.addWidget(row)
+        refs["pages"][2] = lang_rows
+
+        page_lang_l.addStretch(1)
+        back_btn2 = RoundButton(t("back"))
+        back_btn2.clicked.connect(lambda: stack.setCurrentIndex(0))
+        refs["backs"].append(back_btn2)
+        page_lang_l.addWidget(back_btn2)
+        stack.addWidget(page_lang)
+
+        # --- Страница 3: Тема ---
+        page_theme = QWidget()
+        page_theme_l = QVBoxLayout(page_theme)
+        page_theme_l.setContentsMargins(20, 18, 20, 16)
+        page_theme_l.setSpacing(8)
+
+        th_title = QLabel(t("theme"))
+        th_title.setStyleSheet(f"font-size:20px; font-weight:700; color:{c['text']};")
+        refs["titles"].append((th_title, "theme"))
+        page_theme_l.addWidget(th_title)
+        page_theme_l.addSpacing(4)
+
+        cur_theme = self.cfg.get("theme", "dark")
+        theme_options = [
+            ("dark", t("dark_theme"), "dark_theme"),
+            ("light", t("light_theme"), "light_theme"),
+            ("unicorn", t("unicorn_theme"), "unicorn_theme"),
+            ("dota2", t("dota2_theme"), "dota2_theme"),
+        ]
+        theme_rows = []
+
+        def pick_theme(v):
+            self.cfg["theme"] = v
+            save_config(self.cfg)
+            self.apply_theme()
+            self.apply_language()
+            self._sync_choice_rows(theme_rows, self.cfg.get("theme", "dark"))
+            self._refresh_settings_dialog()
+
+        for val, label, tkey in theme_options:
+            row, name, toggle = self._choice_row(
+                label, cur_theme == val, lambda v=val: pick_theme(v))
+            theme_rows.append((val, name, tkey, toggle))
+            refs["rows"].append((name, tkey, toggle))
+            page_theme_l.addWidget(row)
+        refs["pages"][3] = theme_rows
+
+        page_theme_l.addStretch(1)
+        back_btn3 = RoundButton(t("back"))
+        back_btn3.clicked.connect(lambda: stack.setCurrentIndex(0))
+        refs["backs"].append(back_btn3)
+        page_theme_l.addWidget(back_btn3)
+        stack.addWidget(page_theme)
+
+        # --- Страница 4: Обновления ---
+        page_updates = QWidget()
+        page_updates_l = QVBoxLayout(page_updates)
+        page_updates_l.setContentsMargins(20, 18, 20, 16)
+        page_updates_l.setSpacing(10)
+
+        up_title = QLabel(t("updates_menu"))
+        up_title.setStyleSheet(f"font-size:20px; font-weight:700; color:{c['text']};")
+        refs["titles"].append((up_title, "updates_menu"))
+        page_updates_l.addWidget(up_title)
+        page_updates_l.addSpacing(4)
+
+        try:
+            from updater import APP_VERSION
+            ver_text = t("app_version") % APP_VERSION
+        except ImportError:
+            ver_text = t("app_version") % "?"
+
+        ver_lbl = QLabel(ver_text)
+        ver_lbl.setStyleSheet(f"font-size:13px; color:{c['text_secondary']};")
+        refs["version"] = ver_lbl
+        page_updates_l.addWidget(ver_lbl)
+        page_updates_l.addSpacing(8)
+
+        self._updater_btn = RoundButton(t("check_update_btn"))
+        self._updater_btn.clicked.connect(self.check_for_update_now)
+        page_updates_l.addWidget(self._updater_btn)
+
+        page_updates_l.addStretch(1)
+        back_btn4 = RoundButton(t("back"))
+        back_btn4.clicked.connect(lambda: stack.setCurrentIndex(0))
+        refs["backs"].append(back_btn4)
+        page_updates_l.addWidget(back_btn4)
+        stack.addWidget(page_updates)
 
         dlg.exec()
+
+    def _sync_choice_rows(self, page_rows, current_val):
+        """Выбранному пункту включаем тумблер, остальным — выключаем."""
+        for val, _, _, toggle in page_rows:
+            toggle.set_on(val == current_val)
+
+    def _refresh_settings_dialog(self):
+        """Перекраска и перевод текстов открытого диалога настроек."""
+        t = self.tr
+        c = self.colors()
+        refs = getattr(self, "_dlg_refs", None)
+        if not refs:
+            return
+        for w, key in refs["titles"]:
+            w.setText(t(key))
+            w.setStyleSheet(f"font-size:20px; font-weight:700; color:{c['text']};")
+        for w, key in refs["menus"]:
+            w.setText(t(key))
+            w.setStyleSheet(f"font-size:14px; font-weight:700; color:{c['text']};")
+        for w, key, toggle in refs["rows"]:
+            if key is not None:
+                w.setText(t(key))
+            w.setStyleSheet(f"font-size:15px; font-weight:500; color:{c['text']};")
+            toggle.set_colors(c['green'], c['border'])
+        for b in refs["backs"]:
+            b.setText(t("back"))
+        if refs["exit"] is not None:
+            refs["exit"].setText(t("settings_exit"))
+        if refs["version"] is not None:
+            try:
+                from updater import APP_VERSION
+                ver = APP_VERSION
+            except ImportError:
+                ver = "?"
+            refs["version"].setText(t("app_version") % ver)
+            refs["version"].setStyleSheet(f"font-size:13px; color:{c['text_secondary']};")
+        if refs["bypass"] is not None:
+            lbl, tg = refs["bypass"]
+            lbl.setText(t("routing_summary"))
+            lbl.setStyleSheet(f"font-size:16px; font-weight:600; color:{c['text']};")
+            tg.set_colors(c['green'], c['border'])
+
+    # ---------- обновления ----------
+    def check_for_update_background(self):
+        """Фоновая проверка обновлений при запуске."""
+        def worker():
+            try:
+                from updater import get_available_update
+            except Exception:
+                return
+            info = get_available_update()
+            if info:
+                self.sig_update.emit(info)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def check_for_update_now(self):
+        """Ручная проверка обновлений из настроек."""
+        t = self.tr
+        self._updater_btn.setText(t("update_checking"))
+
+        def worker():
+            try:
+                from updater import get_available_update
+            except Exception:
+                self.sig_update.emit(("__failed__", None))
+                return
+            info = get_available_update()
+            if info:
+                self.sig_update.emit(info)
+            else:
+                self.sig_update.emit(("__none__", None))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_sig_update(self, info):
+        """Обработка сигнала об обновлении."""
+        t = self.tr
+        if info is None:
+            return
+        if isinstance(info, tuple) and len(info) == 2 and info[0] == "__launched__":
+            # Установщик запущен — закрываем приложение автоматически, без
+            # ожидания клика. Иначе старый exe залочен и Inno не сможет его
+            # перезаписать ("уже открыта").
+            self.close()
+            app = QApplication.instance()
+            if app is not None:
+                QTimer.singleShot(0, app.quit)
+            return
+        if isinstance(info, tuple) and len(info) == 2 and info[0] == "__failed_dl__":
+            err = info[1]
+            box = t("update_failed")
+            if err:
+                box += "\n" + str(err)
+            QMessageBox.warning(self, t("update_check_title"), box)
+            return
+        if isinstance(info, tuple) and len(info) == 2 and info[0] in ("__failed__", "__none__"):
+            key = info[0]
+            if key == "__failed__":
+                QMessageBox.warning(self, t("update_check_title"), t("update_failed"))
+                return
+            if key == "__none__":
+                QMessageBox.information(self, t("update_check_title"), t("update_none"))
+                return
+        new_version = info[0]
+        url = info[1]
+        changelog = info[2] if len(info) > 2 else ""
+        msg = t("update_msg") % new_version
+        if changelog:
+            msg += "\n\n" + t("update_whats_new") % new_version + "\n- " + "\n- ".join(
+                [ln for ln in changelog.split("\n") if ln.strip()])
+        box = QMessageBox(QMessageBox.Question, t("update_title"), msg, parent=self)
+        btn_yes = box.addButton("Да", QMessageBox.YesRole)
+        box.addButton("Нет", QMessageBox.NoRole)
+        box.setDefaultButton(btn_yes)
+        box.exec()
+        if box.clickedButton() is btn_yes:
+            self._download_and_install(url)
+
+    def _download_and_install(self, url):
+        """Скачивание и установка обновления."""
+        from updater import download_and_install
+
+        def worker():
+            def progress(pct):
+                pass
+            try:
+                download_and_install(url, progress_cb=progress)
+                self.sig_update.emit(("__launched__", None))
+            except Exception as e:
+                self.sig_update.emit(("__failed_dl__", str(e)))
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_engine_log(self, line):
         pass

@@ -1,10 +1,10 @@
 {
   "version": "2.57",
   "windows": {
-    "version": "2.34",
+    "version": "2.35",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-    "size": 100205128,
-    "changelog": "Настройки: тумблеры в выборе темы и языка — выбранное включается, остальные выключены, применяется сразу."
+    "size": 100209272,
+    "changelog": "Обновление ключей одним нажатием, серверы объединены"
   },
 "android": {
     "version": "2.57",

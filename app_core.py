@@ -42,8 +42,34 @@ def ensure_config_dir():
         os.makedirs(CONFIG_DIR, exist_ok=True)
 
 
+LOG_FILE = os.path.join(CONFIG_DIR, "app.log")
+_LOG_LOCK = threading.Lock()
+_LOG_MAX = 200
+
+
+def app_log(msg):
+    """Бесперебойный кольцевой лог последних ~200 действий в %APPDATA%\\TurboBeeVPN\\app.log."""
+    try:
+        ensure_config_dir()
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        line = "[%s] %s\n" % (ts, msg)
+        with _LOG_LOCK:
+            lines = []
+            if os.path.exists(LOG_FILE):
+                with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+            lines.append(line)
+            if len(lines) > _LOG_MAX:
+                lines = lines[-_LOG_MAX:]
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+    except Exception:
+        pass
+
+
 class Profile:
-    def __init__(self, name, host, port, uuid, path, security, transport):
+    def __init__(self, name, host, port, uuid, path="/", security="none", transport="tcp",
+                 sni="", fingerprint="chrome", public_key="", short_id="", mode="auto"):
         self.name = name
         self.host = host
         self.port = port
@@ -51,6 +77,11 @@ class Profile:
         self.path = path
         self.security = security
         self.transport = transport
+        self.sni = sni
+        self.fingerprint = fingerprint
+        self.public_key = public_key
+        self.short_id = short_id
+        self.mode = mode
 
 
 def parse_vless(uri):
@@ -73,12 +104,23 @@ def parse_vless(uri):
     path = params.get("path", "/")
     security = params.get("security", "none")
     transport = params.get("type", "tcp")
+    sni = params.get("sni", "")
+    fingerprint = params.get("fp", "chrome")
+    public_key = params.get("pbk", "")
+    short_id = params.get("sid", "")
+    mode = params.get("mode", "auto")
     try:
         path = urllib.parse.unquote(path)
+        sni = urllib.parse.unquote(sni)
+        mode = urllib.parse.unquote(mode)
         name = urllib.parse.unquote(name)
+        public_key = urllib.parse.unquote(public_key)
+        short_id = urllib.parse.unquote(short_id)
     except Exception:
         pass
-    return Profile(name, host, port, uuid, path, security, transport)
+    return Profile(name, host, port, uuid, path, security, transport,
+                   sni=sni, fingerprint=fingerprint, public_key=public_key,
+                   short_id=short_id, mode=mode)
 
 
 def load_config():
@@ -238,16 +280,36 @@ def build_singbox_config(profile, bypass_ru, use_tun=True):
     if profile.security == "tls":
         outbound["tls"] = {
             "enabled": True,
-            "server_name": profile.host,
-            "utls": {"enabled": True, "fingerprint": "chrome"},
+            "server_name": profile.sni or profile.host,
+            "utls": {"enabled": True, "fingerprint": profile.fingerprint or "chrome"},
             "alpn": ["http/1.1"],
+        }
+    elif profile.security == "reality":
+        outbound["tls"] = {
+            "enabled": True,
+            "server_name": profile.sni or profile.host,
+            "utls": {"enabled": True, "fingerprint": profile.fingerprint or "chrome"},
+            "reality": {
+                "enabled": True,
+                "public_key": profile.public_key,
+                "short_id": profile.short_id,
+            },
         }
     if profile.transport == "ws":
         outbound["transport"] = {
             "type": "ws",
             "path": profile.path,
-            "headers": {"Host": profile.host},
+            "headers": {"Host": profile.sni or profile.host},
         }
+    elif profile.transport == "xhttp":
+        transport = {
+            "type": "xhttp",
+            "path": profile.path,
+            "mode": profile.mode or "auto",
+        }
+        if profile.sni:
+            transport["host"] = profile.sni
+        outbound["transport"] = transport
 
     inbounds = [
         {
