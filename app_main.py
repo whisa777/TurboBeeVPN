@@ -4,11 +4,12 @@ import sys
 import threading
 
 from PySide6.QtCore import Qt, QTimer, QPoint, QPointF, QSize, QRectF, QVariantAnimation, Signal, QObject
-from PySide6.QtGui import QFont, QIcon, QPixmap, QColor, QPainter, QBrush, QPen, QLinearGradient, QMovie
+from PySide6.QtGui import QFont, QIcon, QPixmap, QColor, QPainter, QBrush, QPen, QLinearGradient, QMovie, QAction
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QLineEdit, QCheckBox, QRadioButton,
     QButtonGroup, QDialog, QMessageBox, QSizePolicy, QStackedWidget,
+    QMenu, QSystemTrayIcon,
 )
 
 from app_core import (
@@ -84,6 +85,9 @@ LANG = {
         "update_launched": "Обновление запущено. Приложение будет закрыто и перезапущено автоматически.",
         "update_failed": "Не удалось загрузить обновление",
         "check_update_btn": "Проверить обновление",
+        "tray_menu_show": "Показать окно",
+        "tray_menu_quit": "Выход",
+        "tray_hint_body": "Приложение свернуто в трей. Закрыть: правый клик по иконке → Выход.",
     },
     "en": {
         "app_title": "TurboBee VPN",
@@ -151,6 +155,9 @@ LANG = {
         "update_launched": "Update launched. The application will close and restart automatically.",
         "update_failed": "Failed to download update",
         "check_update_btn": "Check for updates",
+        "tray_menu_show": "Show window",
+        "tray_menu_quit": "Exit",
+        "tray_hint_body": "The app is minimized to tray. To close: right-click the icon → Exit.",
     },
 }
 
@@ -514,6 +521,7 @@ class TurboBeeWindow(QMainWindow):
         self._build_ui()
         self.apply_theme()
         self.apply_language()
+        self._setup_tray()
         self.refresh_profiles()
         self._update_status_ui()
         self._refresh_total_label()
@@ -735,6 +743,58 @@ class TurboBeeWindow(QMainWindow):
         self._update_status_ui()
         self.refresh_profiles()
         self.refresh_proxy_label()
+        self._refresh_tray_labels()
+
+    # ---------- system tray ----------
+    def _setup_tray(self):
+        t = self.tr
+        self._really_quitting = False
+        self._tray_hint_shown = False
+        self.tray = QSystemTrayIcon(QIcon(load_logo() or ""), self)
+        self.tray.setToolTip(t("app_title"))
+        self.tray_menu = QMenu()
+        self.tray_show_action = QAction(t("tray_menu_show"), self.tray_menu)
+        self.tray_show_action.triggered.connect(self._show_window_from_tray)
+        self.tray_menu.addAction(self.tray_show_action)
+        self.tray_menu.addSeparator()
+        self.tray_quit_action = QAction(t("tray_menu_quit"), self.tray_menu)
+        self.tray_quit_action.triggered.connect(self._quit_from_tray)
+        self.tray_menu.addAction(self.tray_quit_action)
+        self.tray.setContextMenu(self.tray_menu)
+        self.tray.activated.connect(self._on_tray_activated)
+        self.tray.show()
+
+    def _refresh_tray_labels(self):
+        # Текст пунктов меняется вместе с языком (см. apply_language).
+        if getattr(self, "tray", None) is None:
+            return
+        t = self.tr
+        self.tray.setToolTip(t("app_title"))
+        self.tray_show_action.setText(t("tray_menu_show"))
+        self.tray_quit_action.setText(t("tray_menu_quit"))
+
+    def _on_tray_activated(self, reason):
+        # Левый клик / двойной клик по иконке — показать окно.
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self._show_window_from_tray()
+
+    def _show_window_from_tray(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_from_tray(self):
+        self._really_quitting = True
+        try:
+            self.engine.stop()
+        except Exception:
+            pass
+        SystemProxy.set_proxy(False)
+        try:
+            self.tray.hide()
+        except Exception:
+            pass
+        QApplication.quit()
 
     def _update_status_ui(self):
         t = self.tr
@@ -1071,13 +1131,14 @@ class TurboBeeWindow(QMainWindow):
         l.addWidget(entry)
 
         btns = QHBoxLayout()
-        cancel = QPushButton(t("cancel"))
-        cancel.setCursor(Qt.PointingHandCursor)
+        c = self.colors()
+        cancel = RoundButton(t("cancel"))
+        cancel.set_colors(c["card"], c["text"], c["border"])
         ok = RoundButton(t("ok"))
         cancel.clicked.connect(dlg.reject)
         ok.clicked.connect(lambda: self._add_submit(entry.text(), dlg))
-        btns.addWidget(cancel, 2)
-        btns.addWidget(ok, 3)
+        btns.addWidget(cancel, 1)
+        btns.addWidget(ok, 1)
         l.addLayout(btns)
         entry.returnPressed.connect(lambda: self._add_submit(entry.text(), dlg))
         entry.setFocus()
@@ -1632,12 +1693,21 @@ class TurboBeeWindow(QMainWindow):
         pass
 
     def closeEvent(self, e):
-        try:
-            self.engine.stop()
-        except Exception:
-            pass
-        SystemProxy.set_proxy(False)
-        super().closeEvent(e)
+        if self._really_quitting or not QSystemTrayIcon.isSystemTrayAvailable():
+            try:
+                self.engine.stop()
+            except Exception:
+                pass
+            SystemProxy.set_proxy(False)
+            super().closeEvent(e)
+            return
+        # X / Alt+F4 — сворачиваем в трей. Реальный выход — только из трея.
+        e.ignore()
+        self.hide()
+        if not self._tray_hint_shown:
+            self._tray_hint_shown = True
+            self.tray.showMessage(self.tr("app_title"), self.tr("tray_hint_body"),
+                                  QIcon(load_logo() or ""), 4000)
 
 
 def main():
@@ -1645,6 +1715,7 @@ def main():
         return
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setQuitOnLastWindowClosed(False)
     font = QFont("Segoe UI", 10)
     app.setFont(font)
     if not _is_admin() and getattr(sys, "frozen", False):
