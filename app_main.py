@@ -1147,9 +1147,7 @@ class TurboBeeWindow(QMainWindow):
         l.addWidget(entry)
 
         btns = QHBoxLayout()
-        c = self.colors()
         cancel = RoundButton(t("cancel"))
-        cancel.set_colors(c["card"], c["text"], c["border"])
         ok = RoundButton(t("ok"))
         cancel.clicked.connect(dlg.reject)
         ok.clicked.connect(lambda: self._add_submit(entry.text(), dlg))
@@ -1710,6 +1708,11 @@ class TurboBeeWindow(QMainWindow):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_engine_log(self, line):
+        low = line.lower()
+        if (("outbound connection to" in low) or ("inbound connection from" in low)
+                or ("inbound connection to" in low) or ("inbound dns packet" in low)
+                or ("dns: exchanged" in low)):
+            return
         app_log("[engine] " + line)
 
     def closeEvent(self, e):

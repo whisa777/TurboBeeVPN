@@ -44,7 +44,7 @@ def ensure_config_dir():
 
 LOG_FILE = os.path.join(CONFIG_DIR, "app.log")
 _LOG_LOCK = threading.Lock()
-_LOG_MAX = 200
+_LOG_MAX = 500
 
 
 def app_log(msg):
