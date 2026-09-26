@@ -1,10 +1,10 @@
 {
   "version": "2.57",
   "windows": {
-    "version": "2.36",
+    "version": "2.37",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-    "size": 100210967,
-    "changelog": "Поправили кнопки / Навели косметику / Сделали системный трей вместо закрытия"
+    "size": 100212555,
+    "changelog": "Поправили кнопки / Навели косметику / Сделали системный трей вместо закрытия / добавлены логи"
   },
 "android": {
     "version": "2.57",

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from app_core import (
     Profile, parse_vless, load_config, save_config, build_singbox_config,
     VpnEngine, SystemProxy, SOCKS_PORT, TunTrafficMonitor, format_rate, format_bytes,
-    fetch_subscription, get_profile_total, add_profile_total,
+    fetch_subscription, get_profile_total, add_profile_total, app_log,
 )
 
 LANG = {
@@ -534,6 +534,11 @@ class TurboBeeWindow(QMainWindow):
         self.sig_refresh_keys.connect(self._on_sig_refresh_keys)
         self.sig_update.connect(self._on_sig_update)
         self.check_for_update_background()
+        try:
+            from updater import APP_VERSION as _ver
+        except Exception:
+            _ver = "?"
+        app_log("app started v%s" % _ver)
 
     # ---------- helpers ----------
     def tr(self, key):
@@ -990,11 +995,13 @@ class TurboBeeWindow(QMainWindow):
                                     QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
                 return
             self.cfg["profiles"] = [x for x in profiles if x.get("source") != src]
+            app_log("key: remove group %s (%d keys)" % (src, len(group)))
         else:
             if QMessageBox.question(self, t("delete_title"), t("delete_msg") % p.get("name", "?"),
                                     QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
                 return
             del self.cfg["profiles"][idx]
+            app_log("key: remove \"%s\"" % p.get("name", "?"))
         if self.cfg.get("current", 0) >= len(self.cfg["profiles"]):
             self.cfg["current"] = 0
         save_config(self.cfg)
@@ -1033,6 +1040,8 @@ class TurboBeeWindow(QMainWindow):
                 public_key=p.get("pbk", ""), short_id=p.get("sid", ""), mode=p.get("mode", "auto"))
             bypass_ru = self.cfg.get("bypass_ru", True)
             use_tun = _is_admin()
+            app_log("connect: try \"%s\" %s:%s transport=%s mode=%s tun=%s"
+                    % (profile.name, profile.host, profile.port, profile.transport, profile.mode, use_tun))
 
             config = build_singbox_config(profile, bypass_ru, use_tun=use_tun)
             self.engine.start(config)
@@ -1051,12 +1060,15 @@ class TurboBeeWindow(QMainWindow):
             if ok:
                 self.connected = True
                 SystemProxy.set_proxy(True)
+                app_log("connect: OK \"%s\" mode=%s" % (profile.name, "proxy" if self.proxy_mode else "tun"))
             else:
                 self.engine.stop()
                 SystemProxy.set_proxy(False)
+                app_log("connect: FAIL test_proxy \"%s\"" % profile.name)
         except Exception as e:
             self.engine.stop()
             SystemProxy.set_proxy(False)
+            app_log("connect: ERROR %r" % (e,))
             self.sig_error.emit(str(e))
         self.sig_refresh.emit()
         self.refresh_proxy_label()
@@ -1069,6 +1081,7 @@ class TurboBeeWindow(QMainWindow):
         self._clear_traffic_labels()
         self.engine.stop()
         SystemProxy.set_proxy(False)
+        app_log("disconnect: off")
         self._update_status_ui()
         self.refresh_proxy_label()
         self._refresh_total_label()
@@ -1096,15 +1109,18 @@ class TurboBeeWindow(QMainWindow):
 
     def _on_sig_error(self, message):
         self._update_status_ui()
+        app_log("error: %s" % message)
         QMessageBox.critical(self, self.tr("connect_error"), message)
 
     def _on_sig_sub_done(self, profiles, error):
         if error:
+            app_log("sub: fetch ERROR %r" % (error,))
             QMessageBox.critical(self, self.tr("sub_error"), error)
         else:
             url = getattr(self, "_pending_sub_url", None)
             self._pending_sub_url = None
             added = self._merge_profiles(profiles or [], url)
+            app_log("sub: imported %d profiles%s" % (added, " from %s" % url if url else ""))
             QMessageBox.information(self, self.tr("add_key"),
                                     self.tr("sub_added") % added)
 
@@ -1178,6 +1194,7 @@ class TurboBeeWindow(QMainWindow):
         save_config(self.cfg)
         dlg.accept()
         self.refresh_profiles()
+        app_log("key: add \"%s\" %s:%s" % (p.name, p.host, p.port))
 
     def _import_subscription(self, url):
         self._pending_sub_url = url
@@ -1211,8 +1228,11 @@ class TurboBeeWindow(QMainWindow):
             results = []
             for src in sources:
                 try:
-                    results.append((src, fetch_subscription(src), None))
+                    profiles = fetch_subscription(src)
+                    app_log("refresh: %s -> %d keys" % (src, len(profiles)))
+                    results.append((src, profiles, None))
                 except Exception as e:
+                    app_log("refresh: %s ERROR %r" % (src, (e,)))
                     results.append((src, None, str(e)))
             self.sig_refresh_keys.emit(results)
         threading.Thread(target=worker, daemon=True).start()
@@ -1690,7 +1710,7 @@ class TurboBeeWindow(QMainWindow):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_engine_log(self, line):
-        pass
+        app_log("[engine] " + line)
 
     def closeEvent(self, e):
         if self._really_quitting or not QSystemTrayIcon.isSystemTrayAvailable():

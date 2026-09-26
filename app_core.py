@@ -436,6 +436,7 @@ class VpnEngine:
             stderr=subprocess.STDOUT,
             creationflags=creationflags,
         )
+        app_log("engine: start pid=%s %s" % (self.process.pid, os.path.basename(engine)))
         threading.Thread(target=self._reader, daemon=True).start()
 
     def _reader(self):
@@ -449,6 +450,7 @@ class VpnEngine:
 
     def stop(self):
         if self.process:
+            app_log("engine: stop pid=%s" % self.process.pid)
             try:
                 self.process.terminate()
                 self.process.wait(timeout=3)
