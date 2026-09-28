@@ -1,0 +1,15 @@
+{
+  "version": "2.58",
+  "windows": {
+    "version": "2.39",
+    "url": "https://github.com/whisa777/TurboBeeVPN/releases/download/test-build/TurboBeeVPN-test-Setup.exe",
+    "size": 100213675,
+    "changelog": "Авто-переподключение ключа при смене сети + канал обновлений"
+  },
+  "android": {
+    "version": "2.58",
+    "url": "https://github.com/whisa777/TurboBeeVPN/releases/download/test-build/TurboBeeVPN-test.apk",
+    "size": 40062717,
+    "changelog": "Авто-переподключение ключа при смене сети (WiFi/сотовая) + канал обновлений: Тестовый/Стабильный"
+  }
+}
