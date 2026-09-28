@@ -7,7 +7,7 @@ import urllib.request
 
 from app_core import app_log
 
-APP_VERSION = "2.39"
+APP_VERSION = "2.40"
 _BASE_UPDATE = "https://raw.githubusercontent.com/whisa777/TurboBeeVPN/main/"
 
 CHANNEL_STABLE = "stable"

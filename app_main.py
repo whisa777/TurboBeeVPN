@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QLineEdit, QCheckBox, QRadioButton,
     QButtonGroup, QDialog, QMessageBox, QSizePolicy, QStackedWidget,
-    QMenu, QSystemTrayIcon,
+    QMenu, QSystemTrayIcon, QProgressDialog,
 )
 
 from app_core import (
@@ -537,6 +537,7 @@ class TurboBeeWindow(QMainWindow):
         self.sig_sub_done.connect(self._on_sig_sub_done)
         self.sig_refresh_keys.connect(self._on_sig_refresh_keys)
         self.sig_update.connect(self._on_sig_update)
+        self._update_progress_dlg = None
         self.check_for_update_background()
         try:
             from updater import APP_VERSION as _ver
@@ -1694,10 +1695,14 @@ class TurboBeeWindow(QMainWindow):
         t = self.tr
         if info is None:
             return
+        if isinstance(info, tuple) and len(info) == 2 and info[0] == "__progress__":
+            self._set_update_progress(info[1])
+            return
         if isinstance(info, tuple) and len(info) == 2 and info[0] == "__launched__":
             # Установщик запущен — закрываем приложение автоматически, без
             # ожидания клика. Иначе старый exe залочен и Inno не сможет его
             # перезаписать ("уже открыта").
+            self._close_update_progress_dlg()
             self.close()
             app = QApplication.instance()
             if app is not None:
@@ -1708,6 +1713,7 @@ class TurboBeeWindow(QMainWindow):
             box = t("update_failed")
             if err:
                 box += "\n" + str(err)
+            self._close_update_progress_dlg()
             QMessageBox.warning(self, t("update_check_title"), box)
             return
         if isinstance(info, tuple) and len(info) == 2 and info[0] in ("__failed__", "__none__"):
@@ -1734,18 +1740,54 @@ class TurboBeeWindow(QMainWindow):
             self._download_and_install(url)
 
     def _download_and_install(self, url):
-        """Скачивание и установка обновления."""
+        """Скачивание и установка обновления с видимым прогрессом."""
         from updater import download_and_install
+
+        t = self.tr
+        dlg = QProgressDialog(t("update_downloading"), "", 0, 100, self)
+        dlg.setWindowTitle(t("update_check_title"))
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setCancelButton(None)
+        dlg.setMinimumDuration(0)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        dlg.setValue(0)
+        dlg.show()
+        self._update_progress_dlg = dlg
 
         def worker():
             def progress(pct):
-                pass
+                try:
+                    self.sig_update.emit(("__progress__", int(pct)))
+                except Exception:
+                    pass
             try:
                 download_and_install(url, progress_cb=progress)
                 self.sig_update.emit(("__launched__", None))
             except Exception as e:
                 self.sig_update.emit(("__failed_dl__", str(e)))
         threading.Thread(target=worker, daemon=True).start()
+
+    def _set_update_progress(self, pct):
+        dlg = getattr(self, "_update_progress_dlg", None)
+        if dlg is None:
+            return
+        try:
+            p = max(0, min(100, int(pct)))
+            dlg.setValue(p)
+            dlg.setLabelText("%s %d%%" % (self.tr("update_downloading"), p))
+        except Exception:
+            pass
+
+    def _close_update_progress_dlg(self):
+        dlg = getattr(self, "_update_progress_dlg", None)
+        if dlg is not None:
+            try:
+                dlg.close()
+                dlg.deleteLater()
+            except Exception:
+                pass
+            self._update_progress_dlg = None
 
     def _on_engine_log(self, line):
         low = line.lower()
