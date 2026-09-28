@@ -7,9 +7,9 @@
     "changelog": "Внесли небольшие изменения"
   },
 "android": {
-    "version": "2.58",
+    "version": "2.59",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 40062717,
-    "changelog": "Авто-переподключение ключа при смене сети + канал обновлений"
+    "size": 40061097,
+    "changelog": "Внесли небольшие изменения"
   }
 }
