@@ -1,15 +1,15 @@
 {
-  "version": "2.58",
+  "version": "2.60",
   "windows": {
-    "version": "2.42",
+    "version": "2.43",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-    "size": 100213982,
+    "size": 100215976,
     "changelog": "Внесли небольшие изменения"
   },
-"android": {
-    "version": "2.59",
+  "android": {
+    "version": "2.60",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-    "size": 40061097,
+    "size": 40063941,
     "changelog": "Внесли небольшие изменения"
   }
 }
