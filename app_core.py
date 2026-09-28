@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 import platform
@@ -173,12 +174,30 @@ def add_profile_total(cfg, p, down, up):
     return stats["down"], stats["up"]
 
 
+HWID_SALT = "turbobee-vpn/v1"
+# hwid.txt остаётся фолбэком для систем, где MachineGuid недоступен.
 HWID_FILE = os.path.join(CONFIG_DIR, "hwid.txt")
 
 
+def _machine_guid():
+    """Стабильный MachineGuid установленной Windows (HKLM, 64-битный реестр)."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\Microsoft\Cryptography",
+                            0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            value, _ = winreg.QueryValueEx(key, "MachineGuid")
+        return str(value).strip().lower()
+    except Exception:
+        return None
+
+
 def get_hwid():
-    """Стабильный идентификатор установки: случайный UUID из первого запуска,
-    хранится рядом с конфигом (%APPDATA%\\TurboBeeVPN\\hwid.txt)."""
+    """Стабильный ID устройства: sha256 от MachineGuid установки (ровно 64 hex).
+    Не зависит от переустановки приложения. Фолбэк — случайный UUID из hwid.txt
+    (поведение старых версий: ID живёт рядом с конфигом, не переживает переустановку)."""
+    guid = _machine_guid()
+    if guid:
+        return hashlib.sha256((HWID_SALT + "|" + guid).lower().encode("utf-8")).hexdigest()
     ensure_config_dir()
     try:
         with open(HWID_FILE, "r", encoding="utf-8") as f:
