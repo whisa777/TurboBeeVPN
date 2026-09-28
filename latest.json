@@ -1,10 +1,10 @@
 {
   "version": "2.58",
   "windows": {
-    "version": "2.40",
+    "version": "2.41",
     "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-    "size": 100217151,
-    "changelog": "Добавили процесс обновления / Добавили выбор диска для установки"
+    "size": 100215234,
+    "changelog": "Выбор папки установки как в обычных программах"
   },
 "android": {
     "version": "2.58",
