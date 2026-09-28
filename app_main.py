@@ -85,8 +85,6 @@ LANG = {
         "update_launched": "Обновление запущено. Приложение будет закрыто и перезапущено автоматически.",
         "update_failed": "Не удалось загрузить обновление",
         "check_update_btn": "Проверить обновление",
-        "channel_stable": "Канал: Стабильный",
-        "channel_test": "Канал: Тестовый",
         "tray_menu_show": "Показать окно",
         "tray_menu_quit": "Выход",
         "tray_hint_body": "Приложение свернуто в трей. Закрыть: правый клик по иконке → Выход.",
@@ -157,8 +155,6 @@ LANG = {
         "update_launched": "Update launched. The application will close and restart automatically.",
         "update_failed": "Failed to download update",
         "check_update_btn": "Check for updates",
-        "channel_stable": "Channel: Stable",
-        "channel_test": "Channel: Test",
         "tray_menu_show": "Show window",
         "tray_menu_quit": "Exit",
         "tray_hint_body": "The app is minimized to tray. To close: right-click the icon → Exit.",
@@ -1384,7 +1380,6 @@ class TurboBeeWindow(QMainWindow):
             "backs": [],      # QPushButton
             "exit": None,     # QPushButton
             "version": None,  # QLabel
-            "channel": None,  # QPushButton — переключатель канала обновлений
         }
         self._dlg_refs = refs
         stack_ref = [stack]
@@ -1574,12 +1569,6 @@ class TurboBeeWindow(QMainWindow):
         self._updater_btn.clicked.connect(self.check_for_update_now)
         page_updates_l.addWidget(self._updater_btn)
 
-        # Переключатель канала обновлений: Стабильный (прод) / Тестовый (предрелиз).
-        self._channel_btn = RoundButton(t(self._channel_label_key()))
-        self._channel_btn.clicked.connect(self._toggle_update_channel)
-        refs["channel"] = self._channel_btn
-        page_updates_l.addWidget(self._channel_btn)
-
         page_updates_l.addStretch(1)
         back_btn4 = RoundButton(t("back"))
         back_btn4.clicked.connect(lambda: stack.setCurrentIndex(0))
@@ -1629,35 +1618,6 @@ class TurboBeeWindow(QMainWindow):
             lbl.setText(t("routing_summary"))
             lbl.setStyleSheet(f"font-size:16px; font-weight:600; color:{c['text']};")
             tg.set_colors(c['green'], c['border'])
-        if refs["channel"] is not None:
-            refs["channel"].setText(t(self._channel_label_key()))
-
-    # ---------- канал обновлений ----------
-    def _current_update_channel(self):
-        try:
-            from app_core import load_config
-            cfg = load_config() or {}
-        except Exception:
-            cfg = {}
-        return cfg.get("channel", "stable")
-
-    def _channel_label_key(self):
-        return "channel_test" if self._current_update_channel() == "test" else "channel_stable"
-
-    def _toggle_update_channel(self):
-        try:
-            from app_core import load_config, save_config
-            cfg = load_config() or {}
-        except Exception:
-            cfg = {}
-        cfg["channel"] = "test" if cfg.get("channel", "stable") != "test" else "stable"
-        try:
-            save_config(cfg)
-        except Exception:
-            pass
-        self._channel_btn.setText(self.tr(self._channel_label_key()))
-        app_log("channel: switched to " + cfg["channel"])
-        self.check_for_update_now()
 
     # ---------- обновления ----------
     def check_for_update_background(self):

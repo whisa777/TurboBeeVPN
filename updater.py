@@ -7,26 +7,12 @@ import urllib.request
 
 from app_core import app_log
 
-APP_VERSION = "2.41"
+APP_VERSION = "2.42"
 _BASE_UPDATE = "https://raw.githubusercontent.com/whisa777/TurboBeeVPN/main/"
-
-CHANNEL_STABLE = "stable"
-CHANNEL_TEST = "test"
-
-
-def current_channel():
-    """Канал обновлений из config.json: 'stable' (прод) или 'test' (предрелиз)."""
-    try:
-        from app_core import load_config
-        cfg = load_config() or {}
-        return cfg.get("channel", CHANNEL_STABLE)
-    except Exception:
-        return CHANNEL_STABLE
 
 
 def update_url():
-    ch = current_channel()
-    f = "latest.json" if ch != CHANNEL_TEST else "latest-test.json"
+    f = "latest.json"
     return _BASE_UPDATE + f + "?cb=" + str(int(time.time()))
 
 
