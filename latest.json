@@ -13,9 +13,9 @@
                     "changelog":  "Внесли небольшие изменения"
                 },
     "tv":  {
-               "version":  "1.0",
+               "version":  "1.01",
                "url":  "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-TV.apk",
-               "size":  52860145,
-               "changelog":  "Версия 1.0 для Android TV (приставки, ТВ)"
+               "size":  52864922,
+               "changelog":  "Версия 1.01 для Android TV: крупный интерфейс под 1080p, фокус с пульта, автораскрытие списка ключей"
            }
 }
