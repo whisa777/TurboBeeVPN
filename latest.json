@@ -1,5 +1,5 @@
 {
-    "version":  "2.60",
+    "version":  "2.61",
     "windows":  {
                     "version":  "2.43",
                     "url":  "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
@@ -7,10 +7,10 @@
                     "changelog":  "Внесли небольшие изменения"
                 },
     "android":  {
-                    "version":  "2.60",
+                    "version":  "2.61",
                     "url":  "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk",
-                    "size":  40063941,
-                    "changelog":  "Внесли небольшие изменения"
+                    "size":  40117099,
+                    "changelog":  "Исправлено обновление приложения: установка обрывалась на середине и не завершалась. Причина - неверный флаг PendingIntent при вызове установщика. Если сессия установки не проходит, приложение само открывает системный установщик. Повтор больше не качает APK заново - используется уже скачанный файл."
                 },
     "tv":  {
                "version":  "1.13",
