@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TurboBeeVPN — скачать для Android</title>
+<meta name="description" content="Скачать TurboBeeVPN для телефона на Android. Установка и обновления.">
+<meta name="theme-color" content="#0f1115">
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b21; --line:#2a2f38;
+    --text:#e8eaed; --muted:#9aa3af; --accent:#e0a53c; --accent-d:#b9842b;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f7f9; --card:#ffffff; --line:#e2e5ea;
+           --text:#1c1f24; --muted:#5f6772; --accent:#c07f1d; --accent-d:#a06a15; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  main{max-width:640px; margin:0 auto; padding:28px 18px 56px}
+  header{text-align:center; margin-bottom:26px}
+  header img{width:84px; height:84px; border-radius:18px; object-fit:cover}
+  h1{font-size:26px; margin:14px 0 4px; letter-spacing:.2px}
+  .lead{color:var(--muted); margin:0 0 22px}
+  .btn{
+    display:block; width:100%; padding:18px 20px; border-radius:14px;
+    background:var(--accent); color:#1b1405; text-align:center;
+    font-size:19px; font-weight:700; text-decoration:none;
+    box-shadow:0 2px 0 var(--accent-d);
+  }
+  .btn:active{ transform:translateY(1px) }
+  .meta{
+    margin:14px 0 0; text-align:center; color:var(--muted); font-size:14px;
+  }
+  .meta b{color:var(--text); font-weight:600}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:18px 18px 6px; margin-top:26px;
+  }
+  .card h2{font-size:18px; margin:0 0 10px}
+  .card h3{font-size:15px; margin:18px 0 6px; color:var(--text)}
+  .card ol,.card ul{margin:0; padding-left:22px}
+  .card li{margin:6px 0; color:var(--muted)}
+  .card li b,.card li strong{color:var(--text); font-weight:600}
+  .path{
+    display:block; background:rgba(127,127,127,.12); border-radius:8px;
+    padding:8px 10px; margin:6px 0; font-size:14px; color:var(--text);
+  }
+  .warn{border-left:3px solid var(--accent); padding-left:12px}
+  .foot{margin-top:28px; text-align:center; color:var(--muted); font-size:13px}
+  .foot a{color:var(--muted)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<main>
+
+  <header>
+    <img src="logo.jpg" alt="TurboBeeVPN" width="84" height="84">
+    <h1>TurboBeeVPN</h1>
+    <p class="lead">VPN для телефона на Android</p>
+  </header>
+
+  <a class="btn" id="dl"
+     href="https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk">Скачать TurboBeeVPN</a>
+  <p class="meta" id="meta">Android · ARM64 · файл 40,1 МБ</p>
+
+  <div class="card">
+    <h2>Если ничего не происходит</h2>
+    <p class="warn" style="color:var(--muted)">
+      Файл скачивается целиком, но Android не показывает установку, пока
+      браузеру, из которого вы качаете, не разрешено ставить приложения.
+      Это ограничение Android 8 и новее, а не ошибка ссылки.
+    </p>
+
+    <h3>Huawei, Honor</h3>
+    <span class="path">Настройки → Безопасность → Установка приложений → выберите браузер → Разрешить</span>
+
+    <h3>Остальные Android</h3>
+    <span class="path">Настройки → Приложения → Специальный доступ → Установка неизвестных приложений → ваш браузер → Разрешить</span>
+
+    <h3>Если ссылка открылась внутри Telegram</h3>
+    <ul>
+      <li>Нажмите и держите кнопку «Скачать TurboBeeVPN» → <b>«Открыть в браузере»</b>.</li>
+      <li>Разрешите установку тому браузеру, который откроется, и повторите скачивание.</li>
+    </ul>
+
+    <h3>Файл уже скачан, а установщик не открывается</h3>
+    <ul>
+      <li>Откройте приложение «Файлы» или «Загрузки» → папка <b>Download</b> → <b>TurboBeeVPN.apk</b>.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Как работают обновления</h2>
+    <ul>
+      <li>Обновления приложение берёт само, отдельная кнопка не нужна.</li>
+      <li>Версия и размер показываются здесь из манифеста канала, поэтому
+          страница не может разойтись с тем, что реально выложено.</li>
+    </ul>
+  </div>
+
+  <p class="foot">
+    TurboBeeVPN · Android-версия<br>
+    <a href="https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN.apk">Прямая ссылка на файл</a>
+  </p>
+
+</main>
+
+<script>
+(function () {
+  var src = 'https://raw.githubusercontent.com/whisa777/TurboBeeVPN/main/latest.json';
+  fetch(src, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (m) {
+      var a = (m && m.android) || {};
+      var parts = ['Android · ARM64'];
+      if (a.version) parts.push('версия ' + a.version);
+      if (a.size) parts.push('файл ' + (a.size / 1e6).toFixed(1).replace('.', ',') + ' МБ');
+      document.getElementById('meta').innerHTML = parts.join(' · ');
+    })
+    .catch(function () {
+      // Манифест недоступен — оставляем статичную подпись, ничего не врём.
+      document.getElementById('meta').textContent = 'Android · ARM64 · файл 40,1 МБ';
+    });
+})();
+</script>
+</body>
+</html>
