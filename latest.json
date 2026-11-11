@@ -13,10 +13,10 @@
                     "changelog":  "Исправлен ряд ошибок, в том числе актуализация адреса привязки."
                 },
     "tv":  {
-               "version":  "1.18",
+               "version":  "1.19",
                "url":  "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-TV.apk",
-               "size":  78446813,
-               "changelog":  "Исправлен ряд ошибок, в том числе актуализация адреса привязки."
+               "size":  78722644,
+               "changelog":  "Восстановлен прежний TV-интерфейс; исправлен адрес pairing, полученный subscription_url импортируется без переписывания."
            },
     "pairing_base_url":  "https://93-123-13-48.sslip.io:8899"
 }
