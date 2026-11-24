@@ -1,10 +1,10 @@
 {
     "version": "2.61",
     "windows": {
-        "version": "2.44",
+        "version": "2.45",
         "url": "https://github.com/whisa777/TurboBeeVPN/releases/latest/download/TurboBeeVPN-Setup.exe",
-        "size": 100659194,
-        "changelog": "Исправление: в TUN-режиме (с правами администратора) больше не включается системный прокси Windows. Steam и Horizon Client больше не теряют соединение из-за прокси."
+        "size": 100659591,
+        "changelog": "Исправление подключения Windows: XHTTP-ключ «Милан» через Cloudflare теперь подключается — убрано конфликтующее uTLS-рукопожатие, HTTP/2 включён явно. Ранее соединение падало с ошибкой http2: frame too large."
     },
     "android": {
         "version": "2.64",
